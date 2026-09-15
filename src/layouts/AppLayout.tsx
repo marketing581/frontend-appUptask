@@ -8,6 +8,7 @@ import {
     Bars3Icon,
     CalendarDaysIcon,
     Cog6ToothIcon,
+    DocumentTextIcon,
     RectangleStackIcon,
     Squares2X2Icon,
     UsersIcon,
@@ -31,7 +32,8 @@ const NAV_SECTIONS = [
         heading: 'Trabajo',
         items: [
             { to: '/mantenimiento', label: 'Mantenimiento', icon: WrenchScrewdriverIcon, end: false },
-            { to: '/proyectos', label: 'Proyectos', icon: RectangleStackIcon, end: false }
+            { to: '/proyectos', label: 'Proyectos', icon: RectangleStackIcon, end: false },
+            { to: '/notas', label: 'Notas', icon: DocumentTextIcon, end: false }
         ]
     }
 ]

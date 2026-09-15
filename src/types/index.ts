@@ -263,3 +263,22 @@ const teamMemberSchema = userSchema.pick({
 export const teamMembersSchema = z.array(teamMemberSchema)
 export type TeamMember = z.infer<typeof teamMemberSchema>
 export type TeamMemberForm = Pick<TeamMember, 'email'>
+
+/** Notas del equipo: bloc de apuntes en Markdown. */
+export const memoPrioritySchema = z.enum(['none', 'low', 'medium', 'high'])
+export type MemoPriority = z.infer<typeof memoPrioritySchema>
+
+export const memoSchema = z.object({
+    _id: z.string(),
+    title: z.string(),
+    content: z.string().default(''),
+    owner: z.union([userSchema, z.string()]),
+    visibility: z.enum(['private', 'team']),
+    priority: memoPrioritySchema.default('none'),
+    date: z.string().nullable().default(null),
+    archived: z.boolean().default(false),
+    createdAt: z.string().optional(),
+    updatedAt: z.string().optional()
+})
+export const memoListSchema = z.array(memoSchema)
+export type Memo = z.infer<typeof memoSchema>

@@ -20,6 +20,7 @@ import MyWorkView from './views/MyWorkView'
 import MaintenanceView from './views/MaintenanceView'
 import MyWeekView from './views/schedule/MyWeekView'
 import TeamBoardView from './views/TeamBoardView'
+import MemosView from './views/MemosView'
 
 export default function Router() {
 
@@ -30,6 +31,7 @@ export default function Router() {
                     <Route path='/' element={<MyWorkView />} index />
                     <Route path='/semana' element={<MyWeekView />} />
                     <Route path='/mantenimiento' element={<MaintenanceView />} />
+                    <Route path='/notas' element={<MemosView />} />
                     <Route path='/equipo' element={<TeamBoardView />} />
                     <Route path='/proyectos' element={<DashboardView />} />
                     <Route path='/projects/create' element={<CreateProjectView />} />
