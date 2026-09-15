@@ -71,12 +71,21 @@
     .memo-body a { @apply text-brand-600 underline; }
     .memo-body hr { @apply border-line my-4; }
 
-    /* Checklists: la casilla se pulsa y lo hecho se tacha. */
-    .memo-body ul:has(> li > input[type="checkbox"]) { @apply list-none pl-0; }
-    .memo-body li:has(> input[type="checkbox"]) { @apply flex items-start gap-2; }
+    /* Listas de tareas: la casilla es una casilla de verdad y lo hecho se tacha. */
+    .memo-body ul[data-type="taskList"] { @apply list-none pl-0 my-2 space-y-1; }
+    .memo-body ul[data-type="taskList"] li { @apply flex items-start gap-2; }
+    .memo-body ul[data-type="taskList"] li > label { @apply shrink-0 mt-0.5 leading-none; }
+    .memo-body ul[data-type="taskList"] li > div { @apply min-w-0 flex-1; }
+    .memo-body ul[data-type="taskList"] li > div > p { @apply my-0; }
     .memo-body input[type="checkbox"] {
-        @apply mt-0.5 w-4 h-4 shrink-0 rounded border-line-strong
-               text-stage-done focus:ring-brand-500 cursor-pointer;
+        @apply w-4 h-4 rounded border-line-strong text-stage-done
+               focus:ring-brand-500 cursor-pointer;
     }
-    .memo-body li:has(> input[type="checkbox"]:checked) { @apply text-ink-subtle line-through; }
+    .memo-body li[data-checked="true"] > div { @apply text-ink-subtle line-through; }
+
+    /* Texto de ayuda cuando la nota está vacía. */
+    .memo-body p.is-editor-empty:first-child::before {
+        content: attr(data-placeholder);
+        @apply text-ink-subtle float-left h-0 pointer-events-none;
+    }
 }

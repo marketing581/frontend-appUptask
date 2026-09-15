@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import { LockClosedIcon, PlusIcon, UsersIcon } from '@heroicons/react/24/outline'
 import { createMemo, deleteMemo, getMemos, updateMemo } from '@/api/MemoAPI'
+import { getScheduleMembers } from '@/api/ScheduleAPI'
 import { useAuth } from '@/hooks/useAuth'
 import { Memo, MemoPriority } from '@/types'
 import { checklistProgress, plainPreview } from '@/utils/markdown'
@@ -14,8 +15,8 @@ import MemoEditor from '@/components/memos/MemoEditor'
 
 const FILTERS = [
     { key: 'all' as const, label: 'Todas' },
-    { key: 'mine' as const, label: 'Mías' },
     { key: 'shared' as const, label: 'Compartidas' },
+    { key: 'private' as const, label: 'Ocultas' },
     { key: 'priority' as const, label: 'Por prioridad' },
     { key: 'archived' as const, label: 'Archivadas' }
 ]
@@ -37,6 +38,7 @@ export default function MemosView() {
     const { data: currentUser } = useAuth()
     const queryClient = useQueryClient()
     const [filter, setFilter] = useState<typeof FILTERS[number]['key']>('all')
+    const [personFilter, setPersonFilter] = useState<string>('all')
     const [openId, setOpenId] = useState<string | null>(null)
 
     const showingArchived = filter === 'archived'
@@ -44,6 +46,12 @@ export default function MemosView() {
     const { data: memos, isLoading } = useQuery({
         queryKey: ['memos', showingArchived],
         queryFn: () => getMemos(showingArchived),
+        retry: false
+    })
+
+    const { data: members } = useQuery({
+        queryKey: ['scheduleMembers'],
+        queryFn: getScheduleMembers,
         retry: false
     })
 
@@ -72,8 +80,9 @@ export default function MemosView() {
 
     const visible = useMemo(() => {
         const list = (memos ?? []).filter(memo => {
-            if (filter === 'mine') return ownerIdOf(memo) === currentUser?._id
+            if (personFilter !== 'all' && ownerIdOf(memo) !== personFilter) return false
             if (filter === 'shared') return memo.visibility === 'team'
+            if (filter === 'private') return memo.visibility === 'private'
             return true
         })
 
@@ -81,7 +90,7 @@ export default function MemosView() {
             return [...list].sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority])
         }
         return list
-    }, [memos, filter, currentUser])
+    }, [memos, filter, personFilter, currentUser])
 
     const open = (memos ?? []).find(memo => memo._id === openId) ?? null
 
@@ -101,7 +110,8 @@ export default function MemosView() {
                 }
             />
 
-            <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-slate-100 w-fit mb-4">
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+            <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-slate-100 w-fit">
                 {FILTERS.map(item => (
                     <button
                         key={item.key}
@@ -117,6 +127,45 @@ export default function MemosView() {
                         {item.label}
                     </button>
                 ))}
+            </div>
+
+            {/* Filtro por autora: cada una ve de un vistazo qué es suyo y qué
+                del resto, sin tener que abrir nota por nota. */}
+            {members && members.length > 1 && (
+                <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-slate-100 w-fit">
+                    <button
+                        type="button"
+                        onClick={() => setPersonFilter('all')}
+                        aria-pressed={personFilter === 'all'}
+                        className={`h-7 px-3 rounded text-xs font-semibold transition-colors ${
+                            personFilter === 'all'
+                                ? 'bg-surface text-ink shadow-card'
+                                : 'text-ink-muted hover:text-ink'
+                        }`}
+                    >
+                        Todo el equipo
+                    </button>
+                    {members.map(member => {
+                        const active = personFilter === member._id
+                        const isSelf = member._id === currentUser?._id
+                        return (
+                            <button
+                                key={member._id}
+                                type="button"
+                                onClick={() => setPersonFilter(member._id)}
+                                aria-pressed={active}
+                                className={`h-7 pl-1 pr-2.5 rounded flex items-center gap-1.5 text-xs
+                                    font-semibold transition-colors ${
+                                    active ? 'bg-surface text-ink shadow-card' : 'text-ink-muted hover:text-ink'
+                                }`}
+                            >
+                                <Avatar name={member.name} size="xs" />
+                                {isSelf ? 'Mías' : member.name.split(' ')[0]}
+                            </button>
+                        )
+                    })}
+                </div>
+            )}
             </div>
 
             {isLoading ? (
@@ -148,7 +197,10 @@ export default function MemosView() {
                                     <div className="flex items-start justify-between gap-2">
                                         <h3 className="text-sm font-bold text-ink leading-snug">{memo.title}</h3>
                                         {memo.visibility === 'private' && (
-                                            <LockClosedIcon className="w-3.5 h-3.5 text-ink-subtle shrink-0 mt-0.5" />
+                                            <span className="shrink-0 inline-flex items-center gap-1 text-2xs
+                                                font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                                                <LockClosedIcon className="w-3 h-3" /> Solo tú
+                                            </span>
                                         )}
                                     </div>
 

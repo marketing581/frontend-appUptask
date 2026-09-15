@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-    ArchiveBoxIcon, Bars3BottomLeftIcon, CheckCircleIcon,
-    ListBulletIcon, LockClosedIcon, TrashIcon, UsersIcon
+    ArchiveBoxIcon, EyeIcon, EyeSlashIcon,
+    LockClosedIcon, TrashIcon, UsersIcon
 } from '@heroicons/react/24/outline'
 import { Memo, MemoPriority } from '@/types'
-import { applyFormat, renderMarkdown, toggleChecklistItem } from '@/utils/markdown'
 import { Avatar, Button } from '@/components/ui'
+import RichNoteEditor from './RichNoteEditor'
 
 /** Editor de una nota.
  *
@@ -18,15 +18,6 @@ const PRIORITIES: { key: MemoPriority, label: string }[] = [
     { key: 'low', label: 'Baja' },
     { key: 'medium', label: 'Media' },
     { key: 'high', label: 'Alta' }
-]
-
-const TOOLBAR = [
-    { format: 'h1' as const, label: 'Título', icon: <span className="text-xs font-bold">H1</span> },
-    { format: 'h2' as const, label: 'Subtítulo', icon: <span className="text-xs font-bold">H2</span> },
-    { format: 'bold' as const, label: 'Negrita', icon: <span className="text-sm font-bold">B</span> },
-    { format: 'bullet' as const, label: 'Lista', icon: <ListBulletIcon className="w-4 h-4" /> },
-    { format: 'number' as const, label: 'Lista numerada', icon: <span className="text-xs font-bold">1.</span> },
-    { format: 'check' as const, label: 'Checklist', icon: <CheckCircleIcon className="w-4 h-4" /> }
 ]
 
 type Props = {
@@ -43,57 +34,67 @@ type Props = {
 export default function MemoEditor({
     memo, canEdit, canDelete, isOwner, saving, onSave, onDelete, onClose
 }: Props) {
-    const textRef = useRef<HTMLTextAreaElement>(null)
-    const [editing, setEditing] = useState(false)
+    const [confirmingDelete, setConfirmingDelete] = useState(false)
+    const [savedAt, setSavedAt] = useState<number | null>(null)
+    const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [title, setTitle] = useState(memo.title)
     const [content, setContent] = useState(memo.content)
 
     useEffect(() => {
         setTitle(memo.title)
         setContent(memo.content)
-        setEditing(false)
-    }, [memo._id, memo.title, memo.content])
+        setConfirmingDelete(false)
+        setSavedAt(null)
+    }, [memo._id])
 
     const owner = typeof memo.owner === 'string' ? null : memo.owner
 
-    const format = (kind: Parameters<typeof applyFormat>[3]) => {
-        const area = textRef.current
-        if (!area) return
-        const result = applyFormat(content, area.selectionStart, area.selectionEnd, kind)
-        setContent(result.value)
-        requestAnimationFrame(() => {
-            area.focus()
-            area.setSelectionRange(result.cursor, result.cursor)
-        })
+    /** Marcar una casilla se guarda al instante, también fuera de edición: es
+     *  el gesto más frecuente en una lista de pendientes.
+     *
+     *  Fuera de edición no se guarda nada más. El editor reformatea el texto al
+     *  cargarlo, y guardar eso automáticamente reescribiría la nota sin que
+     *  nadie la haya tocado.
+     *
+     *  La comparación se hace contra lo último que emitió el propio editor, no
+     *  contra lo guardado: ambos textos vienen del mismo serializador y solo
+     *  así se distingue una casilla marcada de un simple reformateo. */
+    /** Guardado automático con una pausa: se escribe y se guarda solo, como en
+     *  un bloc de notas. Evita el botón «Guardar» y, sobre todo, evita
+     *  reglas frágiles para adivinar si un cambio fue intencionado. */
+    const handleContentChange = (markdown: string) => {
+        setContent(markdown)
+
+        if (saveTimer.current) clearTimeout(saveTimer.current)
+        saveTimer.current = setTimeout(() => {
+            onSave({ content: markdown })
+            setSavedAt(Date.now())
+        }, 900)
     }
 
-    /** Marcar una casilla se guarda al instante, sin entrar en edición. */
-    const handlePreviewClick = (event: React.MouseEvent<HTMLDivElement>) => {
-        const target = event.target as HTMLElement
-        if (target.tagName !== 'INPUT' || !canEdit) return
-
-        const boxes = Array.from(event.currentTarget.querySelectorAll('input[type="checkbox"]'))
-        const index = boxes.indexOf(target as HTMLInputElement)
-        if (index === -1) return
-
-        const next = toggleChecklistItem(content, index)
-        setContent(next)
-        onSave({ content: next })
+    const handleTitleChange = (next: string) => {
+        setTitle(next)
+        if (titleTimer.current) clearTimeout(titleTimer.current)
+        titleTimer.current = setTimeout(() => {
+            onSave({ title: next.trim() || 'Sin título' })
+        }, 900)
     }
 
-    const save = () => {
-        onSave({ title: title.trim() || 'Sin título', content })
-        setEditing(false)
-    }
+    // Al cerrar o cambiar de nota se guarda lo que quede pendiente.
+    useEffect(() => () => {
+        if (saveTimer.current) clearTimeout(saveTimer.current)
+        if (titleTimer.current) clearTimeout(titleTimer.current)
+    }, [])
 
     return (
         <div className="flex flex-col h-full">
             <header className="flex items-start gap-2 px-4 py-3 border-b border-line shrink-0">
                 <div className="min-w-0 flex-1">
-                    {editing ? (
+                    {canEdit ? (
                         <input
                             value={title}
-                            onChange={event => setTitle(event.target.value)}
+                            onChange={event => handleTitleChange(event.target.value)}
                             aria-label="Título de la nota"
                             className="w-full border-0 p-0 text-lg font-bold text-ink
                                 focus:ring-0 placeholder:text-ink-subtle"
@@ -114,9 +115,13 @@ export default function MemoEditor({
                                 ? <><LockClosedIcon className="w-3 h-3" /> Personal</>
                                 : <><UsersIcon className="w-3 h-3" /> Compartida</>}
                         </span>
-                        {memo.updatedAt && (
-                            <span>Editada {new Date(memo.updatedAt).toLocaleDateString('es-PE')}</span>
-                        )}
+                        <span>
+                            {saving ? 'Guardando…'
+                                : savedAt ? 'Guardado'
+                                : memo.updatedAt
+                                    ? `Editada ${new Date(memo.updatedAt).toLocaleDateString('es-PE')}`
+                                    : ''}
+                        </span>
                     </div>
                 </div>
 
@@ -128,68 +133,17 @@ export default function MemoEditor({
                 >✕</button>
             </header>
 
-            {editing && (
-                <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-line shrink-0 overflow-x-auto">
-                    {TOOLBAR.map(item => (
-                        <button
-                            key={item.format}
-                            type="button"
-                            onClick={() => format(item.format)}
-                            title={item.label}
-                            aria-label={item.label}
-                            className="w-7 h-7 shrink-0 grid place-content-center rounded
-                                text-ink-muted hover:bg-slate-100 hover:text-ink"
-                        >
-                            {item.icon}
-                        </button>
-                    ))}
-                    <span className="ml-2 text-2xs text-ink-subtle whitespace-nowrap hidden sm:block">
-                        Se escribe en Markdown
-                    </span>
-                </div>
-            )}
-
-            <div className="flex-1 overflow-y-auto">
-                {editing ? (
-                    <textarea
-                        ref={textRef}
-                        value={content}
-                        onChange={event => setContent(event.target.value)}
-                        aria-label="Contenido de la nota"
-                        placeholder={'# Un título\n\n- [ ] Algo por hacer\n- [x] Algo ya hecho\n\nTexto con **negrita**.'}
-                        className="w-full h-full min-h-[18rem] border-0 p-4 text-sm leading-relaxed
-                            font-mono resize-none focus:ring-0 placeholder:text-ink-subtle"
-                    />
-                ) : (
-                    <div
-                        onClick={handlePreviewClick}
-                        className="memo-body p-4"
-                        dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
-                    />
-                )}
+            <div className="flex-1 overflow-hidden">
+                <RichNoteEditor
+                    value={content}
+                    onChange={handleContentChange}
+                    editable={canEdit}
+                    placeholder={'Escribe aquí. Prueba con [] y un espacio para una casilla.'}
+                />
             </div>
 
             <footer className="flex flex-wrap items-center gap-2 px-3 py-2.5 border-t border-line shrink-0">
-                {canEdit && (editing ? (
-                    <>
-                        <Button variant="primary" size="sm" onClick={save} disabled={saving}>
-                            {saving ? 'Guardando…' : 'Guardar'}
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => {
-                            setTitle(memo.title)
-                            setContent(memo.content)
-                            setEditing(false)
-                        }}>
-                            Cancelar
-                        </Button>
-                    </>
-                ) : (
-                    <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
-                        <Bars3BottomLeftIcon className="w-4 h-4" /> Editar
-                    </Button>
-                ))}
-
-                {canEdit && !editing && (
+                {canEdit && (
                     <>
                         <select
                             value={memo.priority}
@@ -203,21 +157,30 @@ export default function MemoEditor({
                         </select>
 
                         {isOwner && (
-                            <select
-                                value={memo.visibility}
-                                onChange={event => onSave({ visibility: event.target.value as Memo['visibility'] })}
-                                aria-label="Con quién se comparte"
-                                className="h-7 py-0 pl-2 pr-7 text-xs font-medium border-line-strong rounded text-ink-muted"
+                            <button
+                                type="button"
+                                onClick={() => onSave({
+                                    visibility: memo.visibility === 'private' ? 'team' : 'private'
+                                })}
+                                title={memo.visibility === 'private'
+                                    ? 'Mostrarla al equipo'
+                                    : 'Ocultarla: solo tú la verás'}
+                                className={`h-7 px-2.5 rounded text-xs font-semibold inline-flex
+                                    items-center gap-1.5 transition-colors ${
+                                    memo.visibility === 'private'
+                                        ? 'bg-slate-200 text-slate-700 ring-1 ring-inset ring-slate-400'
+                                        : 'text-ink-muted hover:bg-slate-100'
+                                }`}
                             >
-                                <option value="team">Compartida con el equipo</option>
-                                <option value="private">Personal</option>
-                            </select>
+                                {memo.visibility === 'private'
+                                    ? <><EyeSlashIcon className="w-4 h-4" /> Oculta — solo tú</>
+                                    : <><EyeIcon className="w-4 h-4" /> Visible para el equipo</>}
+                            </button>
                         )}
                     </>
                 )}
 
-                {!editing && (
-                    <div className="ml-auto flex items-center gap-1">
+                <div className="ml-auto flex items-center gap-1">
                         {canEdit && (
                             <button
                                 type="button"
@@ -229,19 +192,27 @@ export default function MemoEditor({
                                 <ArchiveBoxIcon className="w-4 h-4" />
                             </button>
                         )}
-                        {canDelete && (
+                        {canDelete && (confirmingDelete ? (
+                            <span className="flex items-center gap-1">
+                                <span className="text-2xs text-ink-muted">¿Eliminar?</span>
+                                <Button variant="danger" size="sm" onClick={onDelete}>Sí, eliminar</Button>
+                                <Button variant="ghost" size="sm" onClick={() => setConfirmingDelete(false)}>
+                                    No
+                                </Button>
+                            </span>
+                        ) : (
                             <button
                                 type="button"
-                                onClick={onDelete}
+                                onClick={() => setConfirmingDelete(true)}
                                 title="Eliminar nota"
                                 aria-label="Eliminar nota"
-                                className="w-7 h-7 grid place-content-center rounded text-red-600 hover:bg-red-50"
+                                className="h-7 px-2 rounded text-red-600 hover:bg-red-50
+                                    inline-flex items-center gap-1 text-xs font-semibold"
                             >
-                                <TrashIcon className="w-4 h-4" />
+                                <TrashIcon className="w-4 h-4" /> Eliminar
                             </button>
-                        )}
+                        ))}
                     </div>
-                )}
             </footer>
         </div>
     )

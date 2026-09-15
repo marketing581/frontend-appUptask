@@ -1,13 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
-import { CheckIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
-import { getMyTasks, updateWorkTask, updateWorkTaskStatus } from '@/api/WorkTaskAPI'
+import { CheckIcon, EyeIcon, EyeSlashIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { deleteWorkTask, getMyTasks, updateWorkTask, updateWorkTaskStatus } from '@/api/WorkTaskAPI'
 import { getScheduleMembers } from '@/api/ScheduleAPI'
 import { useAuth } from '@/hooks/useAuth'
 import { Task } from '@/types'
 import {
-    ALERT_COLOR, FREQUENCY_ORDER, LABEL_ORDER, TaskFrequency, TaskLabel,
+    ALERT_COLOR, FREQUENCY_ORDER, LABEL_ORDER, TaskLabel,
     frequencyBadge, frequencyTranslations, getTaskLabel, labelPalette, labelTranslations
 } from '@/utils/taskLabels'
 import { Avatar, Badge, EmptyState, PageHeader } from '@/components/ui'
@@ -54,6 +54,12 @@ export default function MaintenanceView() {
         mutationFn: updateWorkTask,
         onError: (error: Error) => toast.error(error.message),
         onSuccess: () => refresh()
+    })
+
+    const { mutate: removeTask } = useMutation({
+        mutationFn: deleteWorkTask,
+        onError: (error: Error) => toast.error(error.message),
+        onSuccess: () => { toast.success('Pendiente eliminado'); refresh() }
     })
 
     const operational = useMemo(
@@ -177,9 +183,11 @@ export default function MaintenanceView() {
                                         task={task}
                                         busy={updating}
                                         canEdit={canEditTask(task, currentUser)}
+                                        canHide={canHideTask(task, currentUser)}
                                         onSetStatus={(taskId, status) => setStatus({ taskId, status })}
-                                        onSetFrequency={(taskId, frequency) =>
-                                            patchTask({ taskId, formData: { frequency } as never })}
+                                        onPatch={(taskId, formData) =>
+                                            patchTask({ taskId, formData: formData as never })}
+                                        onDelete={taskId => removeTask(taskId)}
                                     />
                                 ))}
                             </ul>
@@ -203,6 +211,15 @@ export default function MaintenanceView() {
     )
 }
 
+/** Ocultar al equipo es potestad de la encargada, y solo sobre lo suyo: el
+ *  servidor aplica la misma regla, esto solo evita mostrar un botón inútil. */
+function canHideTask(task: Task, user?: { _id: string, role?: string }) {
+    if (!user || user.role !== 'manager') return false
+    const assignee = task.assignee
+    const id = assignee && typeof assignee !== 'string' ? assignee._id : assignee
+    return id === user._id
+}
+
 function canEditTask(task: Task, user?: { _id: string, role?: string }) {
     if (!user) return false
     if (user.role === 'manager') return true
@@ -211,19 +228,34 @@ function canEditTask(task: Task, user?: { _id: string, role?: string }) {
     return id === user._id
 }
 
-function Row({ task, busy, canEdit, onSetStatus, onSetFrequency }: {
+function Row({ task, busy, canEdit, canHide, onSetStatus, onPatch, onDelete }: {
     task: Task
     busy: boolean
     canEdit: boolean
+    canHide: boolean
     onSetStatus: (taskId: string, status: 'pending' | 'inProgress' | 'done') => void
-    onSetFrequency: (taskId: string, frequency: TaskFrequency) => void
+    onPatch: (taskId: string, formData: Record<string, unknown>) => void
+    onDelete: (taskId: string) => void
 }) {
     const label = getTaskLabel(task)
-    // Una recurrente nunca queda en "Listo": se marca hecha en su periodo y
-    // vuelve a estar pendiente para la siguiente vez.
     const done = label === 'done' || !!task.doneForPeriod
     const assignee = task.assignee && typeof task.assignee !== 'string' ? task.assignee : null
     const area = task.brand && typeof task.brand !== 'string' ? task.brand : null
+
+    const [name, setName] = useState(task.name)
+    const [confirming, setConfirming] = useState(false)
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    useEffect(() => { setName(task.name) }, [task.name])
+
+    /** El nombre se edita en la propia fila: renombrar un pendiente operativo
+     *  es frecuente y abrir un formulario para eso sobraría. */
+    const commitName = () => {
+        const next = name.trim()
+        if (next.length === 0) { setName(task.name); return }
+        if (next === task.name) return
+        onPatch(task._id, { name: next })
+    }
 
     return (
         <li className="group flex items-start gap-2.5 px-3 py-2 hover:bg-surface-sunken transition-colors">
@@ -243,14 +275,28 @@ function Row({ task, busy, canEdit, onSetStatus, onSetFrequency }: {
                 <CheckIcon className="w-3 h-3" strokeWidth={3} />
             </button>
 
-            {/* El nombre manda y ocupa la línea entera; los controles fluyen
-                debajo, así la fila no se rompe en pantallas estrechas. */}
             <div className="min-w-0 flex-1">
-                <p className={`text-sm font-medium leading-snug ${
-                    done ? 'text-ink-subtle line-through' : 'text-ink'
-                }`}>
-                    {task.name}
-                </p>
+                {canEdit ? (
+                    <input
+                        ref={inputRef}
+                        value={name}
+                        onChange={event => setName(event.target.value)}
+                        onBlur={commitName}
+                        onKeyDown={event => {
+                            if (event.key === 'Enter') { event.preventDefault(); inputRef.current?.blur() }
+                            if (event.key === 'Escape') { setName(task.name); inputRef.current?.blur() }
+                        }}
+                        aria-label={`Nombre de ${task.name}`}
+                        className={`w-full border-0 p-0 bg-transparent text-sm font-medium leading-snug
+                            focus:ring-0 rounded ${done ? 'text-ink-subtle line-through' : 'text-ink'}`}
+                    />
+                ) : (
+                    <p className={`text-sm font-medium leading-snug ${
+                        done ? 'text-ink-subtle line-through' : 'text-ink'
+                    }`}>
+                        {task.name}
+                    </p>
+                )}
 
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                     {task.doneForPeriod ? (
@@ -264,7 +310,7 @@ function Row({ task, busy, canEdit, onSetStatus, onSetFrequency }: {
                     {canEdit ? (
                         <select
                             value={task.frequency ?? 'none'}
-                            onChange={event => onSetFrequency(task._id, event.target.value as TaskFrequency)}
+                            onChange={event => onPatch(task._id, { frequency: event.target.value })}
                             aria-label={`Frecuencia de ${task.name}`}
                             className={`h-[22px] py-0 pl-1.5 pr-6 text-2xs font-semibold rounded border-0
                                 max-w-[10rem] ${frequencyBadge} focus:ring-1 focus:ring-brand-500`}
@@ -309,6 +355,59 @@ function Row({ task, busy, canEdit, onSetStatus, onSetFrequency }: {
                         </span>
                     )}
                 </div>
+            </div>
+
+            {/* Acciones: ocultar solo sobre lo propio, eliminar con confirmación */}
+            <div className="flex items-center gap-0.5 shrink-0">
+                {canHide && (
+                    <button
+                        type="button"
+                        onClick={() => onPatch(task._id, { isPrivate: !task.isPrivate })}
+                        title={task.isPrivate ? 'Mostrarlo al equipo' : 'Ocultarlo: solo tú lo verás'}
+                        aria-label={task.isPrivate ? 'Mostrar al equipo' : 'Ocultar al equipo'}
+                        className={`w-7 h-7 grid place-content-center rounded transition-opacity
+                            hover:bg-slate-200 ${
+                            task.isPrivate
+                                ? 'text-ink-muted'
+                                : 'text-ink-subtle opacity-0 group-hover:opacity-100 focus:opacity-100'
+                        }`}
+                    >
+                        {task.isPrivate
+                            ? <EyeIcon className="w-4 h-4" />
+                            : <EyeSlashIcon className="w-4 h-4" />}
+                    </button>
+                )}
+
+                {canEdit && (confirming ? (
+                    <span className="flex items-center gap-1">
+                        <button
+                            type="button"
+                            onClick={() => onDelete(task._id)}
+                            className="h-7 px-2 rounded text-2xs font-bold text-white bg-red-600 hover:bg-red-700"
+                        >
+                            Eliminar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setConfirming(false)}
+                            className="h-7 px-2 rounded text-2xs font-semibold text-ink-muted hover:bg-slate-100"
+                        >
+                            No
+                        </button>
+                    </span>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={() => setConfirming(true)}
+                        title="Eliminar pendiente"
+                        aria-label={`Eliminar "${task.name}"`}
+                        className="w-7 h-7 grid place-content-center rounded text-ink-subtle
+                            opacity-0 group-hover:opacity-100 focus:opacity-100
+                            hover:bg-red-50 hover:text-red-600 transition-opacity"
+                    >
+                        <TrashIcon className="w-4 h-4" />
+                    </button>
+                ))}
             </div>
         </li>
     )
