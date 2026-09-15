@@ -1,5 +1,7 @@
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom"
 import { useQuery } from '@tanstack/react-query'
+import { useMemo } from "react"
+import { PlusIcon, UsersIcon } from "@heroicons/react/24/outline"
 import { getFullProject } from "@/api/ProjectAPI"
 import AddTaskModal from "@/components/tasks/AddTaskModal"
 import TaskList from "@/components/tasks/TaskList"
@@ -7,11 +9,10 @@ import EditTaskData from "@/components/tasks/EditTaskData"
 import TaskModalDetails from "@/components/tasks/TaskModalDetails"
 import { useAuth } from "@/hooks/useAuth"
 import { isManager } from "@/utils/policies"
-import { useMemo } from "react"
+import { Button, PageHeader } from "@/components/ui"
 
 export default function ProjectDetailsView() {
-
-    const { data: user, isLoading: authLoading } = useAuth()
+    const { data: user } = useAuth()
     const navigate = useNavigate()
 
     const params = useParams()
@@ -21,33 +22,57 @@ export default function ProjectDetailsView() {
         queryFn: () => getFullProject(projectId),
         retry: false
     })
-    const canEdit = useMemo(() => data?.manager === user?._id , [data, user])
-    if (isLoading && authLoading) return 'Cargando...'
+
+    /** Mismo alcance que el servidor: pertenecer al proyecto habilita trabajar
+     *  en sus tareas; ser su responsable habilita cambiar el proyecto. */
+    const belongsToProject = useMemo(() => {
+        if (!data || !user) return false
+        return data.manager === user._id
+            || data.team?.some(memberId => memberId === user._id)
+            || user.role === 'manager'
+    }, [data, user])
+
+    const isProjectOwner = useMemo(
+        () => !!data && !!user && (isManager(data.manager, user._id) || user.role === 'manager'),
+        [data, user]
+    )
+
+    if (isLoading) return <p className="text-center py-20 text-sm text-ink-muted">Cargando…</p>
     if (isError) return <Navigate to='/404' />
-    if (data && user) return (
+    if (!data || !user) return null
+
+    return (
         <>
-            <h1 className="text-5xl font-black">{data.projectName}</h1>
-            <p className="text-2xl font-light text-gray-500 mt-5">{data.description}</p>
+            <nav className="mb-2">
+                <Link to="/proyectos" className="text-xs font-semibold text-ink-subtle hover:text-brand-600">
+                    ← Proyectos
+                </Link>
+            </nav>
 
-            {isManager(data.manager, user._id) && (
-                <nav className="my-5 flex gap-3">
-                    <button
-                        type="button"
-                        className="bg-purple-400 hover:bg-purple-500 px-10 py-3 text-white text-xl font-bold cursor-pointer transition-colors"
-                        onClick={() => navigate(location.pathname + '?newTask=true')}
-                    >Agregar Tarea</button>
-
-                    <Link
-                        to={'team'}
-                        className="bg-fuchsia-600 hover:bg-fuchsia-700 px-10 py-3 text-white text-xl font-bold cursor-pointer transition-colors"
-                    >Colaboradores</Link>
-                </nav>
-            )}
-
-            <TaskList
-                tasks={data.tasks}
-                canEdit={canEdit}
+            <PageHeader
+                title={data.projectName}
+                subtitle={data.description}
+                actions={belongsToProject ? (
+                    <>
+                        <Button
+                            variant="primary"
+                            onClick={() => navigate(location.pathname + '?newTask=true')}
+                        >
+                            <PlusIcon className="w-4 h-4" /> Nueva tarea
+                        </Button>
+                        {isProjectOwner && (
+                            <Link to="team">
+                                <Button variant="secondary">
+                                    <UsersIcon className="w-4 h-4" /> Colaboradoras
+                                </Button>
+                            </Link>
+                        )}
+                    </>
+                ) : undefined}
             />
+
+            <TaskList tasks={data.tasks} canEdit={belongsToProject} />
+
             <AddTaskModal />
             <EditTaskData />
             <TaskModalDetails />

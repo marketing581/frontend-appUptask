@@ -25,10 +25,12 @@ export async function getTaskById({projectId, taskId} : Pick<TaskAPI, 'projectId
     try {
         const url = `/projects/${projectId}/tasks/${taskId}`
         const { data } = await api(url)
-        const response = taskSchema.safeParse(data)
+        // El detalle ahora llega acompañado de sus bloques de calendario.
+        const response = taskSchema.safeParse(data.task)
         if(response.success) {
             return response.data
         }
+        throw new Error('La tarea no tiene el formato esperado')
     } catch (error) {
         if(isAxiosError(error) && error.response) {
             throw new Error(error.response.data.error)

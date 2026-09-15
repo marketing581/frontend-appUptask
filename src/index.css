@@ -1,3 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+    html {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+        @apply bg-canvas text-ink text-base font-sans;
+        /* Inter tiene cifras de ancho variable: las tabulares alinean las
+           horas y duraciones en columnas. */
+        font-feature-settings: 'cv11', 'ss01';
+    }
+
+    /* Los números de horarios y duraciones no deben bailar al cambiar. */
+    .tabular {
+        font-variant-numeric: tabular-nums;
+    }
+
+    :focus-visible {
+        @apply outline-none ring-2 ring-brand-500 ring-offset-1 ring-offset-canvas;
+    }
+
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+        @apply bg-line-strong rounded-full border-2 border-solid border-transparent bg-clip-content;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        @apply bg-ink-subtle bg-clip-content;
+    }
+}
+
+@layer components {
+    .card {
+        @apply bg-surface border border-line rounded-lg shadow-card;
+    }
+
+    /* Etiqueta de sección: pequeña, en mayúsculas, sin gritar. */
+    .eyebrow {
+        @apply text-2xs font-semibold uppercase tracking-wider text-ink-subtle;
+    }
+}

@@ -4,23 +4,20 @@ type DropTaskProps = {
     status: string
 }
 
-export default function DropTask({status} : DropTaskProps) {
-
-    const { isOver, setNodeRef } = useDroppable({
-        id: status
-    })
-
-    const style = {
-        opacity: isOver ? 0.4 : undefined
-    }
+export default function DropTask({ status }: DropTaskProps) {
+    const { isOver, setNodeRef } = useDroppable({ id: status })
 
     return (
         <div
-            style={style}
             ref={setNodeRef}
-            className="text-xs font-semibold uppercase p-2 border border-dashed border-slate-500 mt-5 grid place-content-center text-slate-500"
+            className={`h-9 rounded-md border border-dashed grid place-content-center
+                text-2xs font-semibold uppercase tracking-wide transition-colors ${
+                isOver
+                    ? 'border-brand-400 bg-brand-50 text-brand-600'
+                    : 'border-line-strong text-ink-subtle'
+            }`}
         >
-            Soltar tarea aquí
+            Soltar aquí
         </div>
     )
 }

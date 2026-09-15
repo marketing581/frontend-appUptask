@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from '@/layouts/AppLayout'
 import DashboardView from '@/views/DashboardView'
 import CreateProjectView from './views/projects/CreateProjectView'
@@ -16,6 +16,10 @@ import ProfileView from './views/profile/ProfileView'
 import ChangePasswordView from './views/profile/ChangePasswordView'
 import ProfileLayout from './layouts/ProfileLayout'
 import NotFound from './views/404/NotFound'
+import MyWorkView from './views/MyWorkView'
+import MaintenanceView from './views/MaintenanceView'
+import MyWeekView from './views/schedule/MyWeekView'
+import TeamBoardView from './views/TeamBoardView'
 
 export default function Router() {
 
@@ -23,7 +27,11 @@ export default function Router() {
         <BrowserRouter>
             <Routes>
                 <Route element={<AppLayout />}>
-                    <Route path='/' element={<DashboardView />} index />
+                    <Route path='/' element={<MyWorkView />} index />
+                    <Route path='/semana' element={<MyWeekView />} />
+                    <Route path='/mantenimiento' element={<MaintenanceView />} />
+                    <Route path='/equipo' element={<TeamBoardView />} />
+                    <Route path='/proyectos' element={<DashboardView />} />
                     <Route path='/projects/create' element={<CreateProjectView />} />
                     <Route path='/projects/:projectId' element={<ProjectDetailsView />} />
                     <Route path='/projects/:projectId/edit' element={<EditProjectView />} />
@@ -32,6 +40,9 @@ export default function Router() {
                         <Route path='/profile' element={<ProfileView />} />
                         <Route path='/profile/password' element={<ChangePasswordView />} />
                     </Route>
+
+                    {/* "Mi día" se fusionó con "Mi trabajo" */}
+                    <Route path='/mi-dia' element={<Navigate to='/' replace />} />
                 </Route>
 
                 <Route element={<AuthLayout />}>

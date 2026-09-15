@@ -1,36 +1,38 @@
 import { DndContext, DragEndEvent } from '@dnd-kit/core'
-import { Project, TaskProject, TaskStatus } from "@/types/index"
+import { TaskProject } from "@/types/index"
 import TaskCard from "./TaskCard"
-import { statusTranslations } from "@/locales/es"
 import DropTask from "./DropTask"
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { updateStatus } from '@/api/TaskAPI'
+import { updateWorkTaskStatus, requestWorkTaskReview, resolveWorkTaskReview } from '@/api/WorkTaskAPI'
 import { toast } from 'react-toastify'
 import { useParams } from 'react-router-dom'
+import {
+    LABEL_ORDER,
+    TaskLabel,
+    getTaskLabel,
+    labelPalette,
+    labelTranslations
+} from '@/utils/taskLabels'
 
 type TaskListProps = {
     tasks: TaskProject[]
     canEdit: boolean
 }
 
-type GroupedTasks = {
-    [key: string]: TaskProject[]
-}
+type GroupedTasks = Record<TaskLabel, TaskProject[]>
 
-const initialStatusGroups: GroupedTasks = {
+const emptyGroups: GroupedTasks = {
     pending: [],
-    onHold: [],
     inProgress: [],
-    underReview: [],
-    completed: [],
+    toValidate: [],
+    done: [],
 }
 
-const statusStyles: { [key: string]: string } = {
-    pending: 'border-t-slate-500',
-    onHold: 'border-t-red-500',
-    inProgress: 'border-t-blue-500',
-    underReview: 'border-t-amber-500',
-    completed: 'border-t-emerald-500',
+const columnHints: Record<TaskLabel, string> = {
+    pending: 'Aún no empezada',
+    inProgress: 'En ejecución',
+    toValidate: 'Esperando aprobación',
+    done: 'Terminada y aprobada'
 }
 
 export default function TaskList({ tasks, canEdit }: TaskListProps) {
@@ -38,73 +40,100 @@ export default function TaskList({ tasks, canEdit }: TaskListProps) {
     const params = useParams()
     const projectId = params.projectId!
     const queryClient = useQueryClient()
-    const { mutate } = useMutation({
-        mutationFn: updateStatus,
-        onError: (error) => {
-            toast.error(error.message)
-        },
-        onSuccess: (data) => {
-            toast.success(data)
-            queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+
+    const refresh = () => {
+        queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+        queryClient.invalidateQueries({ queryKey: ['unscheduled'] })
+        queryClient.invalidateQueries({ queryKey: ['week'] })
+    }
+
+    const onError = (error: Error) => {
+        toast.error(error.message)
+        refresh()
+    }
+
+    const { mutate: changeStatus } = useMutation({
+        mutationFn: updateWorkTaskStatus,
+        onError,
+        onSuccess: data => {
+            if (data?.awaitingApproval) {
+                toast.info('Tiene aprobadora asignada: pasa a Por validar, no a Listo')
+            } else {
+                toast.success('Tarea actualizada')
+            }
+            refresh()
         }
     })
 
-    const groupedTasks = tasks.reduce((acc, task) => {
-        let currentGroup = acc[task.status] ? [...acc[task.status]] : [];
-        currentGroup = [...currentGroup, task]
-        return { ...acc, [task.status]: currentGroup };
-    }, initialStatusGroups);
+    const { mutate: sendToValidation } = useMutation({
+        mutationFn: requestWorkTaskReview,
+        onError,
+        onSuccess: () => { toast.success('Enviada a validación'); refresh() }
+    })
 
-    const handleDragEnd = (e: DragEndEvent) => {
-        const { over, active } = e
+    const { mutate: approve } = useMutation({
+        mutationFn: resolveWorkTaskReview,
+        onError,
+        onSuccess: () => { toast.success('Aprobada'); refresh() }
+    })
 
-        if (over && over.id) {
-            const taskId = active.id.toString()
-            const status = over.id as TaskStatus
-            mutate({ projectId, taskId, status })
+    const groupedTasks = tasks.reduce((groups, task) => {
+        const label = getTaskLabel(task)
+        return { ...groups, [label]: [...groups[label], task] }
+    }, emptyGroups)
 
-            queryClient.setQueryData(['project', projectId], (prevData: Project) => {
-                const updatedTasks = prevData.tasks.map((task) => {
-                    if(task._id === taskId) {
-                        return {
-                            ...task,
-                            status
-                        }
-                    }
-                    return task
-                })
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { over, active } = event
+        if (!over?.id) return
 
-                return {
-                    ...prevData,
-                    tasks: updatedTasks
-                }
-            })
+        const taskId = active.id.toString()
+        const target = over.id as TaskLabel
+        const task = tasks.find(item => item._id === taskId)
+        if (!task) return
+
+        const current = getTaskLabel(task)
+        if (current === target) return
+
+        // Cada columna significa una acción distinta sobre la tarea.
+        if (target === 'toValidate') {
+            sendToValidation({ taskId })
+        } else if (target === 'done' && current === 'toValidate') {
+            approve({ taskId, approved: true })
+        } else {
+            changeStatus({ taskId, status: target })
         }
     }
 
     return (
         <>
-            <h2 className="text-5xl font-black my-10">Tareas</h2>
-
-            <div className='flex gap-5 overflow-x-scroll 2xl:overflow-auto pb-32'>
+            <div className='flex gap-3 overflow-x-auto pb-6 -mx-1 px-1'>
                 <DndContext onDragEnd={handleDragEnd} >
-                    {Object.entries(groupedTasks).map(([status, tasks]) => (
-                        <div key={status} className='min-w-[300px] 2xl:min-w-0 2xl:w-1/5'>
-                            <h3
-                                className={`capitalize text-xl font-light border border-slate-300 bg-white p-3 border-t-8 ${statusStyles[status]} `}
-                            >{statusTranslations[status]}</h3>
+                    {LABEL_ORDER.map(label => {
+                        const columnTasks = groupedTasks[label]
+                        return (
+                            <div key={label} className='min-w-[270px] flex-1 flex flex-col'>
+                                <div className='flex items-center gap-2 px-1 pb-2'>
+                                    <span className='w-2 h-2 rounded-full shrink-0'
+                                        style={{ backgroundColor: labelPalette[label].solid }} />
+                                    <h3 className='text-sm font-bold text-ink'>{labelTranslations[label]}</h3>
+                                    <span className='text-xs font-semibold text-ink-subtle tabular'>
+                                        {columnTasks.length}
+                                    </span>
+                                    <span className='ml-auto text-2xs text-ink-subtle truncate'>
+                                        {columnHints[label]}
+                                    </span>
+                                </div>
 
-                            <DropTask status={status} />
+                                <DropTask status={label} />
 
-                            <ul className='mt-5 space-y-5'>
-                                {tasks.length === 0 ? (
-                                    <li className="text-gray-500 text-center pt-3">No Hay tareas</li>
-                                ) : (
-                                    tasks.map(task => <TaskCard key={task._id} task={task} canEdit={canEdit} />)
-                                )}
-                            </ul>
-                        </div>
-                    ))}
+                                <ul className='mt-2 space-y-2'>
+                                    {columnTasks.map(task => (
+                                        <TaskCard key={task._id} task={task} canEdit={canEdit} />
+                                    ))}
+                                </ul>
+                            </div>
+                        )
+                    })}
                 </DndContext>
             </div>
         </>
