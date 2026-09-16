@@ -13,14 +13,56 @@ const extractError = (error: unknown, fallback: string) => {
     throw new Error(fallback)
 }
 
-export async function getMyTasks(params?: { assignee?: string, includeDone?: boolean }) {
-    try {
-        const search = new URLSearchParams()
-        if (params?.assignee) search.set('assignee', params.assignee)
-        if (params?.includeDone) search.set('includeDone', 'true')
+/** Naturaleza del trabajo. No es un campo nuevo en la base: se deduce de si
+ *  la tarea cuelga de un proyecto y de si tiene cadencia. Son tres cosas que
+ *  se gestionan distinto y por eso se piden por separado.
+ *   - `maintenance`: se repite (diario, semanal, a pedido…)
+ *   - `oneOff`: ocurre una vez y se acaba
+ *   - `project`: forma parte de un proyecto con seguimiento */
+export type TaskKind = 'maintenance' | 'oneOff' | 'project'
 
-        const { data } = await api.get(`/tasks?${search.toString()}`)
+type TaskQuery = {
+    assignee?: string
+    includeDone?: boolean
+    status?: TaskStatus
+    kind?: TaskKind
+    limit?: number
+    /** Busca por nombre, en toda la colección y no solo en la página. */
+    q?: string
+}
+
+const taskSearch = (params?: TaskQuery) => {
+    const search = new URLSearchParams()
+    if (params?.assignee) search.set('assignee', params.assignee)
+    if (params?.includeDone) search.set('includeDone', 'true')
+    if (params?.status) search.set('status', params.status)
+    if (params?.kind) search.set('kind', params.kind)
+    if (params?.limit) search.set('limit', String(params.limit))
+    if (params?.q) search.set('q', params.q)
+    return search.toString()
+}
+
+export async function getMyTasks(params?: TaskQuery) {
+    try {
+        const { data } = await api.get(`/tasks?${taskSearch(params)}`)
         return data as Task[]
+    } catch (error) {
+        extractError(error, 'No se pudieron cargar las tareas')
+    }
+}
+
+/** Igual que `getMyTasks`, pero devolviendo además cuántas hay en total.
+ *  El histórico puede ser de cientos: se trae una página y se dice el resto,
+ *  en vez de descargarlo entero para mostrar veinte líneas. */
+export async function getTaskPage(params: TaskQuery) {
+    try {
+        const response = await api.get(`/tasks?${taskSearch(params)}`)
+        const total = Number(response.headers['x-total-count'])
+        const tasks = response.data as Task[]
+        return {
+            tasks,
+            total: Number.isFinite(total) ? total : tasks.length
+        }
     } catch (error) {
         extractError(error, 'No se pudieron cargar las tareas')
     }

@@ -29,17 +29,24 @@ type RowKey = TaskFrequency | 'project'
 
 const ROWS: { key: RowKey, label: string, hint: string }[] = [
     { key: 'daily', label: 'Diario', hint: 'Todos los días' },
+    { key: 'everyOtherDay', label: 'Interdiario', hint: 'Día sí, día no' },
     { key: 'weekly', label: 'Semanal', hint: 'Cada semana' },
     { key: 'biweekly', label: 'Quincenal', hint: 'Cada dos semanas' },
     { key: 'monthly', label: 'Mensual', hint: 'Una vez al mes' },
     { key: 'onDemand', label: 'Según requerimiento', hint: 'Cuando se pide' },
-    { key: 'none', label: 'Sin cadencia', hint: 'Operativo suelto' },
+    { key: 'none', label: 'Pendientes', hint: 'De una sola vez' },
     { key: 'project', label: 'Proyectos', hint: 'Con seguimiento' }
 ]
 
 const VIEWS = [
-    { key: 'day' as const, label: 'El día', rows: ['daily'] as RowKey[] },
-    { key: 'week' as const, label: 'La semana', rows: ['daily', 'weekly'] as RowKey[] },
+    { key: 'day' as const, label: 'El día', rows: ['daily', 'everyOtherDay', 'none'] as RowKey[] },
+    // Lo puntual entra en la semana: es buena parte de lo que se despacha en
+    // ella y dejarlo fuera daba una foto incompleta de la carga.
+    {
+        key: 'week' as const,
+        label: 'La semana',
+        rows: ['daily', 'everyOtherDay', 'weekly', 'none'] as RowKey[]
+    },
     { key: 'all' as const, label: 'Todo', rows: ROWS.map(row => row.key) }
 ]
 

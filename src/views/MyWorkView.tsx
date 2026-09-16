@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { CheckIcon, PlusIcon } from '@heroicons/react/24/outline'
+import { CheckIcon, ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { getDaySchedule } from '@/api/ScheduleAPI'
-import { createWorkTask, getMyTasks, updateWorkTaskStatus } from '@/api/WorkTaskAPI'
+import {
+    deleteWorkTask, getMyTasks, getTaskPage, updateWorkTask, updateWorkTaskStatus
+} from '@/api/WorkTaskAPI'
 import { useAuth } from '@/hooks/useAuth'
 import { Task } from '@/types'
 import { durationMinutes, formatDuration, formatTime, getZonedParts } from '@/utils/datetime'
@@ -12,16 +14,35 @@ import {
     ALERT_COLOR, frequencyBadge, frequencyShort, getTaskLabel, labelPalette, labelTranslations
 } from '@/utils/taskLabels'
 import { Avatar, Badge, Button, EmptyState, PageHeader, StatTile } from '@/components/ui'
+import QuickCreateTask from '@/components/tasks/QuickCreateTask'
+import WorkTaskRow from '@/components/tasks/WorkTaskRow'
+import { canEditTask, canHideTask } from '@/utils/taskPermissions'
 
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
     'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
 
+/** Cuántos pendientes cerrados se traen de golpe. El histórico completo puede
+ *  ser de cientos y casi nunca se mira entero: se muestran los últimos y se
+ *  dice cuántos quedan. */
+const PAST_PAGE = 40
+
+/** Espera a que se deje de escribir antes de consultar: una petición por
+ *  tecla pulsada no aporta nada y satura la lista de resultados a medias. */
+function useDebounced(value: string, delay: number) {
+    const [settled, setSettled] = useState(value)
+    useEffect(() => {
+        const timer = setTimeout(() => setSettled(value), delay)
+        return () => clearTimeout(timer)
+    }, [value, delay])
+    return settled
+}
+
 const projectNameOf = (task: Task) =>
     task.project && typeof task.project !== 'string' ? task.project.projectName : null
 
-/** Fila compacta de tarea, con la casilla de completar a la izquierda.
- *  Un clic cierra el trabajo operativo sin abrir nada. */
+/** Fila compacta de solo lectura, para las listas donde no se edita
+ *  (lo vencido, lo de proyecto). */
 function TaskRow({ task, onComplete, busy, showProject = true }: {
     task: Task
     onComplete: (taskId: string) => void
@@ -89,10 +110,115 @@ function TaskRow({ task, onComplete, busy, showProject = true }: {
     )
 }
 
+/** Histórico de pendientes puntuales ya cerrados.
+ *
+ *  Va plegado: no es trabajo por hacer, es memoria. Se abre para responder
+ *  «¿esto ya lo hicimos?», y por eso lo primero que ofrece al abrirse es un
+ *  buscador y no una lista interminable. */
+function PastTasks({ userId }: { userId?: string }) {
+    const [open, setOpen] = useState(false)
+    const [term, setTerm] = useState('')
+    const query = useDebounced(term, 300)
+
+    // La búsqueda la resuelve el servidor sobre todo el histórico: filtrar solo
+    // la página cargada haría que un pendiente que sí existe pareciera no estar.
+    const { data, isLoading, isFetching } = useQuery({
+        queryKey: ['pastTasks', userId, query],
+        queryFn: () => getTaskPage({
+            assignee: userId,
+            kind: 'oneOff',
+            status: 'done',
+            limit: PAST_PAGE,
+            q: query || undefined
+        }),
+        enabled: open && !!userId,
+        placeholderData: previous => previous,
+        retry: false
+    })
+
+    const tasks = useMemo(() => data?.tasks ?? [], [data])
+    const total = data?.total ?? 0
+
+    return (
+        <div className="card overflow-hidden">
+            <button
+                type="button"
+                onClick={() => setOpen(value => !value)}
+                aria-expanded={open}
+                className="w-full flex items-center justify-between px-3 h-11 text-left
+                    hover:bg-surface-sunken transition-colors"
+            >
+                <div>
+                    <h2 className="text-sm font-bold text-ink">Pendientes pasados</h2>
+                    <p className="text-2xs text-ink-subtle leading-none">
+                        Lo puntual que ya cerraste
+                    </p>
+                </div>
+                <span className="flex items-center gap-2">
+                    {open && total > 0 && !query && (
+                        <span className="text-2xs font-semibold text-ink-subtle tabular">{total}</span>
+                    )}
+                    <ChevronDownIcon
+                        className={`w-4 h-4 text-ink-subtle transition-transform ${open ? 'rotate-180' : ''}`}
+                    />
+                </span>
+            </button>
+
+            {open && (
+                <div className="border-t border-line">
+                    <label className="flex items-center gap-2 px-3 py-2 border-b border-line">
+                        <MagnifyingGlassIcon className="w-4 h-4 text-ink-subtle shrink-0" />
+                        <input
+                            value={term}
+                            onChange={event => setTerm(event.target.value)}
+                            placeholder="Buscar en el histórico…"
+                            aria-label="Buscar en pendientes pasados"
+                            className="flex-1 border-0 p-0 text-sm placeholder:text-ink-subtle
+                                focus:ring-0 bg-transparent"
+                        />
+                    </label>
+
+                    {isLoading ? (
+                        <p className="px-3 py-6 text-center text-sm text-ink-muted">Cargando…</p>
+                    ) : tasks.length === 0 ? (
+                        <EmptyState
+                            title={query ? 'Nada con ese nombre' : 'Todavía no hay histórico'}
+                            hint={query ? undefined : 'Aquí quedará lo puntual que vayas cerrando.'}
+                        />
+                    ) : (
+                        <>
+                            <ul className={`divide-y divide-line max-h-96 overflow-y-auto
+                                ${isFetching ? 'opacity-50' : ''}`}>
+                                {tasks.map(task => (
+                                    <li key={task._id} className="flex items-start gap-2.5 px-3 py-1.5">
+                                        <CheckIcon
+                                            className="w-3.5 h-3.5 mt-1 shrink-0 text-stage-done"
+                                            strokeWidth={3}
+                                        />
+                                        <span className="text-sm text-ink-muted leading-snug">
+                                            {task.name}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                            {total > tasks.length && (
+                                <p className="px-3 py-2 text-2xs text-ink-subtle border-t border-line">
+                                    {query
+                                        ? `${total} coinciden; se muestran ${tasks.length}. Afina la búsqueda.`
+                                        : `Se muestran los ${tasks.length} más recientes de ${total}.`}
+                                </p>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
 export default function MyWorkView() {
     const { data: currentUser } = useAuth()
     const queryClient = useQueryClient()
-    const [quickTask, setQuickTask] = useState('')
     const today = useMemo(() => new Date(), [])
 
     const { data: day } = useQuery({
@@ -109,6 +235,7 @@ export default function MyWorkView() {
 
     const refresh = () => {
         queryClient.invalidateQueries({ queryKey: ['myTasks'] })
+        queryClient.invalidateQueries({ queryKey: ['pastTasks'] })
         queryClient.invalidateQueries({ queryKey: ['day'] })
         queryClient.invalidateQueries({ queryKey: ['week'] })
         queryClient.invalidateQueries({ queryKey: ['unscheduled'] })
@@ -127,10 +254,16 @@ export default function MyWorkView() {
         }
     })
 
-    const { mutate: addTask, isPending: adding } = useMutation({
-        mutationFn: createWorkTask,
+    const { mutate: patchTask } = useMutation({
+        mutationFn: updateWorkTask,
         onError: (error: Error) => toast.error(error.message),
-        onSuccess: () => { setQuickTask(''); refresh() }
+        onSuccess: () => refresh()
+    })
+
+    const { mutate: removeTask } = useMutation({
+        mutationFn: deleteWorkTask,
+        onError: (error: Error) => toast.error(error.message),
+        onSuccess: () => { toast.success('Pendiente eliminado'); refresh() }
     })
 
     const mine = useMemo(
@@ -142,8 +275,13 @@ export default function MyWorkView() {
         [tasks, currentUser]
     )
 
-    // Lo operativo se resuelve en el día; lo de proyecto arrastra seguimiento.
-    const maintenance = mine.filter(task => !task.project)
+    /** Tres naturalezas de trabajo, que se piensan y se despachan distinto:
+     *   - mantenimiento: vuelve solo, se cierra en el día;
+     *   - pendientes: ocurren una vez y desaparecen de la lista al cerrarlos;
+     *   - proyecto: arrastran seguimiento, validación y entregables.
+     *  No hace falta un campo nuevo: la cadencia y el proyecto ya lo dicen. */
+    const maintenance = mine.filter(task => !task.project && task.frequency !== 'none')
+    const oneOff = mine.filter(task => !task.project && (task.frequency ?? 'none') === 'none')
     const projectWork = mine.filter(task => task.project)
 
     const timezone = day?.timezone ?? 'America/Lima'
@@ -153,12 +291,16 @@ export default function MyWorkView() {
     const blocked = mine.filter(task => task.onHold?.active)
     const waitingValidation = mine.filter(task => getTaskLabel(task) === 'toValidate')
 
-    const handleQuickAdd = (event: React.FormEvent) => {
-        event.preventDefault()
-        const name = quickTask.trim()
-        if (name.length === 0 || adding) return
-        addTask({ name })
-    }
+    const rowProps = (task: Task) => ({
+        busy: completing,
+        canEdit: canEditTask(task, currentUser),
+        canHide: canHideTask(task, currentUser),
+        onSetStatus: (taskId: string, status: 'pending' | 'inProgress' | 'done') =>
+            complete({ taskId, status }),
+        onPatch: (taskId: string, formData: Record<string, unknown>) =>
+            patchTask({ taskId, formData: formData as never }),
+        onDelete: (taskId: string) => removeTask(taskId)
+    })
 
     return (
         <>
@@ -246,48 +388,53 @@ export default function MyWorkView() {
                         )}
                     </div>
 
-                    {/* Mantenimiento: rápido, repetitivo, se termina en el día */}
+                    {/* Pendientes: ocurren una vez y se acaban. Es donde va a
+                        parar casi todo lo que surge en el día. */}
                     <div className="card overflow-hidden">
                         <div className="flex items-center justify-between px-3 h-11 border-b border-line">
                             <div>
-                                <h2 className="text-sm font-bold text-ink">Mantenimiento</h2>
+                                <h2 className="text-sm font-bold text-ink">
+                                    Pendientes
+                                    {oneOff.length > 0 && (
+                                        <span className="ml-1.5 text-ink-subtle tabular font-semibold">
+                                            {oneOff.length}
+                                        </span>
+                                    )}
+                                </h2>
                                 <p className="text-2xs text-ink-subtle leading-none">
-                                    Operativo del día a día
+                                    De una sola vez, sin cadencia ni proyecto
                                 </p>
                             </div>
-                            <Link to="/mantenimiento" className="text-xs font-semibold text-brand-600 hover:underline">
-                                Ver todo
+                            <Link to="/semana" className="text-xs font-semibold text-brand-600 hover:underline">
+                                Programar
                             </Link>
                         </div>
 
-                        <form onSubmit={handleQuickAdd} className="flex items-center gap-2 px-3 py-2 border-b border-line">
-                            <PlusIcon className="w-4 h-4 text-ink-subtle shrink-0" />
-                            <input
-                                value={quickTask}
-                                onChange={event => setQuickTask(event.target.value)}
-                                placeholder="Añadir pendiente rápido y pulsar Enter…"
-                                aria-label="Nuevo pendiente operativo"
-                                className="flex-1 border-0 p-0 text-sm placeholder:text-ink-subtle
-                                    focus:ring-0 bg-transparent"
-                            />
-                        </form>
+                        <div className="px-2 py-2 border-b border-line">
+                            <QuickCreateTask label="Nuevo pendiente" defaults={{ frequency: 'none' }} />
+                        </div>
 
-                        {maintenance.length === 0 ? (
-                            <EmptyState title="Sin pendientes operativos" hint="Todo el trabajo del día está cerrado." />
+                        {oneOff.length === 0 ? (
+                            <EmptyState
+                                title="Sin pendientes sueltos"
+                                hint="Lo que surja y no se repita, anótalo aquí."
+                            />
                         ) : (
-                            <ul className="divide-y divide-line max-h-80 overflow-y-auto">
-                                {maintenance.map(task => (
-                                    <TaskRow
+                            <ul className="divide-y divide-line max-h-96 overflow-y-auto">
+                                {oneOff.map(task => (
+                                    <WorkTaskRow
                                         key={task._id}
                                         task={task}
-                                        busy={completing}
-                                        showProject={false}
-                                        onComplete={taskId => complete({ taskId, status: 'done' })}
+                                        showFrequency={false}
+                                        showDueDate
+                                        {...rowProps(task)}
                                     />
                                 ))}
                             </ul>
                         )}
                     </div>
+
+                    <PastTasks userId={currentUser?._id} />
                 </section>
 
                 {/* Columna derecha: seguimiento */}
@@ -311,6 +458,41 @@ export default function MyWorkView() {
                             </ul>
                         </div>
                     )}
+
+                    {/* Mantenimiento: rápido, repetitivo, se termina en el día */}
+                    <div className="card overflow-hidden">
+                        <div className="flex items-center justify-between px-3 h-11 border-b border-line">
+                            <div>
+                                <h2 className="text-sm font-bold text-ink">
+                                    Mantenimiento
+                                    {maintenance.length > 0 && (
+                                        <span className="ml-1.5 text-ink-subtle tabular font-semibold">
+                                            {maintenance.length}
+                                        </span>
+                                    )}
+                                </h2>
+                                <p className="text-2xs text-ink-subtle leading-none">
+                                    Operativo que se repite
+                                </p>
+                            </div>
+                            <Link to="/mantenimiento" className="text-xs font-semibold text-brand-600 hover:underline">
+                                Ver todo
+                            </Link>
+                        </div>
+
+                        {maintenance.length === 0 ? (
+                            <EmptyState
+                                title="Sin mantenimiento abierto"
+                                hint="Lo que se repite cada día o cada semana vive en Mantenimiento."
+                            />
+                        ) : (
+                            <ul className="divide-y divide-line max-h-80 overflow-y-auto">
+                                {maintenance.map(task => (
+                                    <WorkTaskRow key={task._id} task={task} {...rowProps(task)} />
+                                ))}
+                            </ul>
+                        )}
+                    </div>
 
                     <div className="card overflow-hidden">
                         <div className="flex items-center justify-between px-3 h-11 border-b border-line">
