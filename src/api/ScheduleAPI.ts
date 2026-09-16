@@ -4,6 +4,7 @@ import {
     teamBoardSchema,
     dayScheduleSchema,
     teamMembersSchema,
+    rangeScheduleSchema,
     unscheduledListSchema,
     weekScheduleSchema,
     SchedulePrefs,
@@ -43,6 +44,23 @@ export async function getDaySchedule({ date, userId }: { date: Date, userId?: st
         throw new Error('La respuesta del día no tiene el formato esperado')
     } catch (error) {
         extractError(error, 'No se pudo cargar el día')
+    }
+}
+
+/** Bloques entre dos fechas, para las vistas de mes y de trimestre. */
+export async function getRangeSchedule({ from, to, userId }: {
+    from: Date, to: Date, userId?: string
+}) {
+    try {
+        const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })
+        if (userId) params.set('userId', userId)
+
+        const { data } = await api.get(`/schedule/range?${params.toString()}`)
+        const result = rangeScheduleSchema.safeParse(data)
+        if (result.success) return result.data
+        throw new Error('La respuesta del calendario no tiene el formato esperado')
+    } catch (error) {
+        extractError(error, 'No se pudo cargar el calendario')
     }
 }
 

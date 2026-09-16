@@ -5,6 +5,7 @@ import {
     createTimeBlock,
     deleteTimeBlock,
     getScheduleMembers,
+    getRangeSchedule,
     getUnscheduledTasks,
     getWeekSchedule,
     leaveTimeBlock,
@@ -22,8 +23,13 @@ import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from '@heroicons/react/24
 import { Avatar, Badge, Button, PageHeader } from '@/components/ui'
 import { useAuth } from '@/hooks/useAuth'
 import { GuestConflict, TimeBlock } from '@/types'
-import { addDays, durationMinutes, formatDuration, formatRangeLabel } from '@/utils/datetime'
+import {
+    addDays, addMonths, durationMinutes, formatDuration, formatRangeLabel,
+    monthGridDays, monthLabel, quarterLabel, quarterMonths, startOfMonth
+} from '@/utils/datetime'
 import WeekGrid from '@/components/schedule/WeekGrid'
+import MonthGrid from '@/components/schedule/MonthGrid'
+import QuarterGrid from '@/components/schedule/QuarterGrid'
 import UnscheduledPanel from '@/components/schedule/UnscheduledPanel'
 import BlockFormModal from '@/components/schedule/BlockFormModal'
 import QuickCreateTask from '@/components/tasks/QuickCreateTask'
@@ -33,6 +39,7 @@ export default function MyWeekView() {
     const queryClient = useQueryClient()
 
     const [anchor, setAnchor] = useState(() => new Date())
+    const [view, setView] = useState<'week' | 'month' | 'quarter'>('week')
     const [viewedUserId, setViewedUserId] = useState<string | undefined>(undefined)
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -68,6 +75,7 @@ export default function MyWeekView() {
 
     const invalidate = () => {
         queryClient.invalidateQueries({ queryKey: ['week'] })
+        queryClient.invalidateQueries({ queryKey: ['range'] })
         queryClient.invalidateQueries({ queryKey: ['unscheduled'] })
         queryClient.invalidateQueries({ queryKey: ['day'] })
     }
@@ -183,7 +191,17 @@ export default function MyWeekView() {
     })
 
     const timezone = week?.timezone ?? 'America/Lima'
-    const prefs = week?.schedulePrefs ?? { dayStartHour: 8, dayEndHour: 18, showWeekends: false }
+
+    /** La franja visible es de quien mira, no de quien se mira.
+     *
+     *  Antes salía de las preferencias del calendario abierto, así que al ver
+     *  el de otra persona el control no hacía nada: guardaba en tu perfil y la
+     *  rejilla seguía leyendo el suyo. Ahora es un ajuste de vista —como en
+     *  cualquier calendario— y por eso funciona siempre, en el calendario de
+     *  quien sea, sin pedir permiso y sin reescribir los ajustes de nadie. */
+    const prefs = currentUser?.schedulePrefs
+        ?? week?.schedulePrefs
+        ?? { dayStartHour: 8, dayEndHour: 18, showWeekends: false }
 
     const days = useMemo(() => {
         if (!week) return []
@@ -191,6 +209,43 @@ export default function MyWeekView() {
         const count = prefs.showWeekends ? 7 : 5
         return Array.from({ length: count }, (_, i) => addDays(start, i))
     }, [week, prefs.showWeekends])
+
+    const months = useMemo(
+        () => view === 'quarter' ? quarterMonths(anchor, timezone) : [startOfMonth(anchor, timezone)],
+        [view, anchor, timezone]
+    )
+
+    /** Rango que hay que pedir: la rejilla del mes incluye días de los meses
+     *  vecinos, y esos bloques también se pintan. */
+    const range = useMemo(() => {
+        if (view === 'week') return null
+        const grids = months.map(month => monthGridDays(month, timezone))
+        const flat = grids.flat()
+        return { from: flat[0], to: addDays(flat[flat.length - 1], 1) }
+    }, [view, months, timezone])
+
+    const { data: rangeData } = useQuery({
+        queryKey: ['range', viewedUserId ?? 'me', range?.from.toISOString(), range?.to.toISOString()],
+        queryFn: () => getRangeSchedule({ from: range!.from, to: range!.to, userId: viewedUserId }),
+        enabled: !!range,
+        retry: false
+    })
+
+    /** Ir a un día concreto: se cambia a la semana, que es donde se pone hora. */
+    const openDay = (day: Date) => {
+        setAnchor(day)
+        setView('week')
+    }
+
+    /** Avanzar o retroceder según lo que se esté mirando. */
+    const step = (direction: 1 | -1) => {
+        if (view === 'week') return setAnchor(addDays(anchor, 7 * direction))
+        setAnchor(addMonths(anchor, (view === 'month' ? 1 : 3) * direction, timezone))
+    }
+
+    const periodLabel = view === 'week'
+        ? null
+        : view === 'month' ? monthLabel(anchor, timezone) : quarterLabel(anchor, timezone)
 
     const scheduledThisWeek = useMemo(
         () => (week?.blocks ?? []).reduce((total, block) => total + durationMinutes(block.start, block.end), 0),
@@ -288,9 +343,10 @@ export default function MyWeekView() {
             <div className="card flex flex-wrap items-center gap-x-3 gap-y-2 p-2 mb-3">
                 <div className="flex items-center gap-0.5">
                     <button
-                        onClick={() => setAnchor(addDays(anchor, -7))}
+                        onClick={() => step(-1)}
                         className="w-7 h-7 grid place-content-center rounded text-ink-muted hover:bg-slate-100"
-                        aria-label="Semana anterior"
+                        aria-label={view === 'week' ? 'Semana anterior'
+                            : view === 'month' ? 'Mes anterior' : 'Trimestre anterior'}
                     >
                         <ChevronLeftIcon className="w-4 h-4" />
                     </button>
@@ -299,19 +355,47 @@ export default function MyWeekView() {
                         className="h-7 px-2.5 rounded text-xs font-semibold text-ink-muted hover:bg-slate-100"
                     >Hoy</button>
                     <button
-                        onClick={() => setAnchor(addDays(anchor, 7))}
+                        onClick={() => step(1)}
                         className="w-7 h-7 grid place-content-center rounded text-ink-muted hover:bg-slate-100"
-                        aria-label="Semana siguiente"
+                        aria-label={view === 'week' ? 'Semana siguiente'
+                            : view === 'month' ? 'Mes siguiente' : 'Trimestre siguiente'}
                     >
                         <ChevronRightIcon className="w-4 h-4" />
                     </button>
                 </div>
 
-                <p className="text-sm font-bold text-ink tabular">
-                    {formatRangeLabel(new Date(week.weekStart), weekEndVisible, timezone)}
+                <p className="text-sm font-bold text-ink tabular capitalize">
+                    {periodLabel ?? formatRangeLabel(new Date(week.weekStart), weekEndVisible, timezone)}
                 </p>
 
-                <Badge variant="outline">{formatDuration(scheduledThisWeek)} programadas</Badge>
+                {/* Semana, mes o trimestre. Cada una responde una pregunta
+                    distinta: a qué hora, cómo viene el mes, cómo viene el
+                    trimestre. */}
+                <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-slate-100">
+                    {([
+                        { key: 'week' as const, label: 'Semana' },
+                        { key: 'month' as const, label: 'Mes' },
+                        { key: 'quarter' as const, label: 'Trimestre' }
+                    ]).map(item => (
+                        <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => setView(item.key)}
+                            aria-pressed={view === item.key}
+                            className={`h-7 px-2.5 rounded text-xs font-semibold transition-colors ${
+                                view === item.key
+                                    ? 'bg-surface text-ink shadow-card'
+                                    : 'text-ink-muted hover:text-ink'
+                            }`}
+                        >
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
+
+                {view === 'week' && (
+                    <Badge variant="outline">{formatDuration(scheduledThisWeek)} programadas</Badge>
+                )}
 
                 {/* Cambiar de calendario con un gesto, no escondido en un menú */}
                 {members && members.length > 1 && (
@@ -339,7 +423,8 @@ export default function MyWeekView() {
                 )}
 
                 <div className="ml-auto flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-1.5 text-xs font-medium text-ink-muted">
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-ink-muted"
+                        title="Ajuste tuyo: se aplica a cualquier calendario que abras">
                         <input
                             type="checkbox"
                             checked={prefs.showWeekends}
@@ -349,7 +434,9 @@ export default function MyWeekView() {
                         Fines de semana
                     </label>
 
-                    <label className="flex items-center gap-1 text-xs font-medium text-ink-muted">
+                    <label className={`flex items-center gap-1 text-xs font-medium text-ink-muted ${
+                        view === 'week' ? '' : 'hidden'
+                    }`} title="Ajuste tuyo: se aplica a cualquier calendario que abras">
                         Franja
                         <input
                             type="number" min={0} max={23} value={prefs.dayStartHour}
@@ -368,8 +455,37 @@ export default function MyWeekView() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-3">
+            <div className={`grid grid-cols-1 gap-3 ${
+                view === 'week' ? 'xl:grid-cols-[1fr_300px]' : ''
+            }`}>
                 <div className="card overflow-hidden">
+                    {view === 'month' ? (
+                        <MonthGrid
+                            month={months[0]}
+                            timezone={timezone}
+                            blocks={rangeData?.blocks ?? []}
+                            calendarOwnerId={viewedUserId ?? currentUser?._id ?? ''}
+                            showWeekends={prefs.showWeekends}
+                            onSelectBlock={block =>
+                                setModal({ open: true, start: null, blockId: block._id })}
+                            onOpenDay={openDay}
+                            onCreateOn={day => {
+                                // Como en un calendario al uso: pulsar un día del mes
+                                // propone crear ahí, a la hora en que empieza la jornada.
+                                const start = new Date(day)
+                                start.setUTCHours(start.getUTCHours() + prefs.dayStartHour)
+                                setModal({ open: true, start, blockId: null })
+                            }}
+                        />
+                    ) : view === 'quarter' ? (
+                        <QuarterGrid
+                            months={months}
+                            timezone={timezone}
+                            blocks={rangeData?.blocks ?? []}
+                            showWeekends={prefs.showWeekends}
+                            onOpenDay={openDay}
+                        />
+                    ) : (
                     <WeekGrid
                         timezone={timezone}
                         windowStartHour={prefs.dayStartHour}
@@ -392,8 +508,10 @@ export default function MyWeekView() {
                             })
                         }}
                     />
+                    )}
                 </div>
 
+                {view === 'week' && (
                 <aside className="card overflow-hidden self-start">
                     <div className="px-3 h-11 flex flex-col justify-center border-b border-line">
                         <h2 className="text-sm font-bold text-ink">Por programar</h2>
@@ -420,6 +538,7 @@ export default function MyWeekView() {
                         </Button>
                     </div>
                 </aside>
+                )}
             </div>
 
             <BlockFormModal

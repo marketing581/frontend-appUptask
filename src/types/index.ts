@@ -189,6 +189,17 @@ export const weekScheduleSchema = z.object({
 })
 export type WeekSchedule = z.infer<typeof weekScheduleSchema>
 
+/** Bloques de un rango cualquiera: lo que pintan las vistas de mes y de
+ *  trimestre, que no necesitan las preferencias de franja. */
+export const rangeScheduleSchema = z.object({
+    user: userSchema.pick({ _id: true, name: true, email: true }),
+    timezone: z.string(),
+    from: z.string(),
+    to: z.string(),
+    blocks: z.array(timeBlockSchema)
+})
+export type RangeSchedule = z.infer<typeof rangeScheduleSchema>
+
 export const dayScheduleSchema = z.object({
     user: userSchema.pick({ _id: true, name: true, email: true }),
     timezone: z.string(),

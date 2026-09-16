@@ -141,3 +141,59 @@ export const TIMEZONE_OPTIONS = [
     'America/New_York',
     'Europe/Madrid'
 ]
+
+/* ------------------------------------------------------- Mes y trimestre */
+
+export const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+/** Primer instante del mes que contiene la fecha, en la zona indicada. */
+export function startOfMonth(date: Date, timezone: string): Date {
+    const parts = getZonedParts(date, timezone)
+    return zonedTimeToUtc(parts.year, parts.month, 1, 0, 0, timezone)
+}
+
+export function addMonths(date: Date, months: number, timezone: string): Date {
+    const parts = getZonedParts(date, timezone)
+    const total = parts.month - 1 + months
+    const year = parts.year + Math.floor(total / 12)
+    const month = ((total % 12) + 12) % 12 + 1
+    return zonedTimeToUtc(year, month, 1, 0, 0, timezone)
+}
+
+/** Rejilla de un mes: semanas completas de lunes a domingo, incluidos los
+ *  días de los meses vecinos que hagan falta para cuadrarla. Es lo que permite
+ *  que todas las filas tengan siete celdas. */
+export function monthGridDays(month: Date, timezone: string): Date[] {
+    const first = startOfMonth(month, timezone)
+    const gridStart = startOfWeek(first, timezone)
+    const nextMonth = addMonths(first, 1, timezone)
+
+    const days: Date[] = []
+    let cursor = gridStart
+    // Se completa hasta cubrir el mes y cerrar la última semana.
+    while (cursor < nextMonth || days.length % 7 !== 0) {
+        days.push(cursor)
+        cursor = addDays(cursor, 1)
+        if (days.length > 42) break
+    }
+    return days
+}
+
+/** Los tres meses del trimestre natural al que pertenece la fecha. */
+export function quarterMonths(date: Date, timezone: string): Date[] {
+    const parts = getZonedParts(date, timezone)
+    const firstMonth = Math.floor((parts.month - 1) / 3) * 3 + 1
+    const start = zonedTimeToUtc(parts.year, firstMonth, 1, 0, 0, timezone)
+    return [0, 1, 2].map(offset => addMonths(start, offset, timezone))
+}
+
+export function monthLabel(date: Date, timezone: string): string {
+    const parts = getZonedParts(date, timezone)
+    return `${MONTH_NAMES[parts.month - 1]} ${parts.year}`
+}
+
+export function quarterLabel(date: Date, timezone: string): string {
+    const parts = getZonedParts(date, timezone)
+    return `T${Math.floor((parts.month - 1) / 3) + 1} ${parts.year}`
+}
