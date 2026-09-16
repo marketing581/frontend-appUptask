@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from '@/layouts/AppLayout'
 import DashboardView from '@/views/DashboardView'
-import CreateProjectView from './views/projects/CreateProjectView'
 import EditProjectView from './views/projects/EditProjectView'
 import ProjectDetailsView from './views/projects/ProjectDetailsView'
 import AuthLayout from './layouts/AuthLayout'
@@ -34,7 +33,8 @@ export default function Router() {
                     <Route path='/notas' element={<MemosView />} />
                     <Route path='/equipo' element={<TeamBoardView />} />
                     <Route path='/proyectos' element={<DashboardView />} />
-                    <Route path='/projects/create' element={<CreateProjectView />} />
+                    {/* La creación pasó a ser un modal sobre "/proyectos" */}
+                    <Route path='/projects/create' element={<Navigate to='/proyectos?newProject=true' replace />} />
                     <Route path='/projects/:projectId' element={<ProjectDetailsView />} />
                     <Route path='/projects/:projectId/edit' element={<EditProjectView />} />
                     <Route path='/projects/:projectId/team' element={<ProjectTeamView />} />

@@ -1,70 +1,81 @@
 import { UseFormRegister, FieldErrors } from 'react-hook-form'
-import ErrorMessage from "../ErrorMessage"
-import { ProjectFormData } from 'types'
+import { useQuery } from '@tanstack/react-query'
+import { getBrands } from '@/api/BrandAPI'
+import { ProjectFormData } from '@/types/index'
 
 type ProjectFormProps = {
     register: UseFormRegister<ProjectFormData>
     errors: FieldErrors<ProjectFormData>
 }
 
-export default function ProjectForm({errors, register} : ProjectFormProps) {
+const fieldClass = `w-full rounded-md border-line-strong text-sm text-ink
+    placeholder:text-ink-subtle focus:border-brand-500 focus:ring-brand-500`
+
+/** Solo el nombre es obligatorio. El resto —cliente, descripción, área— se
+ *  completa cuando haga falta, así que van marcados como opcionales en vez
+ *  de fingir que son requisitos para poder trabajar. */
+export default function ProjectForm({ errors, register }: ProjectFormProps) {
+    const { data: brands } = useQuery({ queryKey: ['brands'], queryFn: getBrands })
+
     return (
-        <>
-            <div className="mb-5 space-y-3">
-                <label htmlFor="projectName" className="text-sm uppercase font-bold">
-                    Nombre del Proyecto
+        <div className="space-y-4">
+            <div>
+                <label htmlFor="projectName" className="block text-xs font-semibold text-ink-muted mb-1">
+                    Nombre del proyecto
                 </label>
                 <input
                     id="projectName"
-                    className="w-full p-3  border border-gray-200"
+                    className={`${fieldClass} h-10`}
                     type="text"
-                    placeholder="Nombre del Proyecto"
+                    placeholder="Nombre del proyecto"
                     {...register("projectName", {
-                        required: "El Titulo del Proyecto es obligatorio",
+                        required: "El nombre del proyecto es obligatorio",
                     })}
                 />
-
                 {errors.projectName && (
-                    <ErrorMessage>{errors.projectName.message}</ErrorMessage>
+                    <p className="text-xs text-red-600 font-semibold mt-1">{errors.projectName.message}</p>
                 )}
             </div>
 
-            <div className="mb-5 space-y-3">
-                <label htmlFor="clientName" className="text-sm uppercase font-bold">
-                    Nombre Cliente
+            <div>
+                <label htmlFor="clientName" className="block text-xs font-semibold text-ink-muted mb-1">
+                    Cliente <span className="font-normal text-ink-subtle">(opcional)</span>
                 </label>
                 <input
                     id="clientName"
-                    className="w-full p-3  border border-gray-200"
+                    className={`${fieldClass} h-10`}
                     type="text"
-                    placeholder="Nombre del Cliente"
-                    {...register("clientName", {
-                        required: "El Nombre del Cliente es obligatorio",
-                    })}
+                    placeholder="Nombre del cliente"
+                    {...register("clientName")}
                 />
-
-                {errors.clientName && (
-                    <ErrorMessage>{errors.clientName.message}</ErrorMessage>
-                )}
             </div>
 
-            <div className="mb-5 space-y-3">
-                <label htmlFor="description" className="text-sm uppercase font-bold">
-                    Descripción
+            {brands && brands.length > 0 && (
+                <div>
+                    <label htmlFor="brand" className="block text-xs font-semibold text-ink-muted mb-1">
+                        Área <span className="font-normal text-ink-subtle">(opcional)</span>
+                    </label>
+                    <select id="brand" className={`${fieldClass} h-10`} {...register("brand")}>
+                        <option value="">Sin área</option>
+                        {brands.map(item => (
+                            <option key={item._id} value={item._id}>{item.name}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            <div>
+                <label htmlFor="description" className="block text-xs font-semibold text-ink-muted mb-1">
+                    Descripción <span className="font-normal text-ink-subtle">(opcional)</span>
                 </label>
                 <textarea
                     id="description"
-                    className="w-full p-3  border border-gray-200"
-                    placeholder="Descripción del Proyecto"
-                    {...register("description", {
-                        required: "Una descripción del proyecto es obligatoria"
-                    })}
+                    rows={3}
+                    className={fieldClass}
+                    placeholder="De qué se trata este proyecto"
+                    {...register("description")}
                 />
-
-                {errors.description && (
-                    <ErrorMessage>{errors.description.message}</ErrorMessage>
-                )}
             </div>
-        </>
+        </div>
     )
 }

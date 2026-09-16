@@ -168,6 +168,9 @@ export async function deleteTimeBlock(blockId: string) {
 export async function updateSchedulePreferences(payload: {
     timezone?: string
     schedulePrefs?: Partial<SchedulePrefs>
+    /** Presente solo cuando la encargada edita el horario de otra persona:
+     *  sin esto, el servidor siempre guarda en la cuenta de quien pide. */
+    userId?: string
 }) {
     try {
         const { data } = await api.put('/schedule/preferences', payload)

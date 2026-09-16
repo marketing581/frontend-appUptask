@@ -2,14 +2,20 @@ import api from "@/lib/axios";
 import { Project, ProjectFormData, dashboardProjectSchema, editProjectSchema, projectSchema } from "../types";
 import { isAxiosError } from "axios";
 
+const extractError = (error: unknown, fallback: string) => {
+    if (isAxiosError(error) && error.response) {
+        throw new Error(error.response.data.error ?? fallback)
+    }
+    throw new Error(fallback)
+}
+
 export async function createProject(formData: ProjectFormData) {
     try {
-        const { data } = await api.post('/projects', formData)
-        return data
+        const { data } = await api.post('/projects', formData)
+        const result = projectSchema.safeParse(data)
+        return result.success ? result.data : (data as Project)
     } catch (error) {
-        if(isAxiosError(error) && error.response) {
-            throw new Error(error.response.data.error)
-        }
+        extractError(error, 'No se pudo crear el proyecto')
     }
 }
 
@@ -21,9 +27,7 @@ export async function getProjects() {
             return response.data
         }
     } catch (error) {
-        if(isAxiosError(error) && error.response) {
-            throw new Error(error.response.data.error)
-        }
+        extractError(error, 'No se pudieron cargar los proyectos')
     }
 }
 
@@ -35,9 +39,7 @@ export async function getProjectById(id: Project['_id']) {
             return response.data
         }
     } catch (error) {
-        if(isAxiosError(error) && error.response) {
-            throw new Error(error.response.data.error)
-        }
+        extractError(error, 'No se pudo cargar el proyecto')
     }
 }
 
@@ -49,9 +51,7 @@ export async function getFullProject(id: Project['_id']) {
             return response.data
         }
     } catch (error) {
-        if(isAxiosError(error) && error.response) {
-            throw new Error(error.response.data.error)
-        }
+        extractError(error, 'No se pudo cargar el proyecto')
     }
 }
 
@@ -62,23 +62,19 @@ type ProjectAPIType = {
 
 export async function updateProject({formData, projectId} : ProjectAPIType ) {
     try {
-        const { data } = await api.put<string>(`/projects/${projectId}`, formData)
+        const { data } = await api.put(`/projects/${projectId}`, formData)
         return data
     } catch (error) {
-        if(isAxiosError(error) && error.response) {
-            throw new Error(error.response.data.error)
-        }
+        extractError(error, 'No se pudo actualizar el proyecto')
     }
 }
 
 export async function deleteProject(id: Project['_id']) {
     try {
         const url = `/projects/${id}`
-        const { data } = await api.delete<string>(url)
+        const { data } = await api.delete(url)
         return data
     } catch (error) {
-        if(isAxiosError(error) && error.response) {
-            throw new Error(error.response.data.error)
-        }
+        extractError(error, 'No se pudo eliminar el proyecto')
     }
 }

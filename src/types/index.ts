@@ -246,11 +246,15 @@ export type TeamBoard = z.infer<typeof teamBoardSchema>
 export const projectSchema = z.object({
     _id: z.string(),
     projectName: z.string(),
-    clientName: z.string(),
-    description: z.string(),
+    /** Opcionales: un proyecto nace con solo su nombre. */
+    clientName: z.string().default(''),
+    description: z.string().default(''),
+    brand: z.union([brandSchema, z.string()]).nullable().optional(),
     manager: z.string(userSchema.pick({_id: true})),
     tasks: z.array(taskProjectSchema),
-    team: z.array(z.string(userSchema.pick({_id: true})))
+    team: z.array(z.string(userSchema.pick({_id: true}))),
+    createdAt: z.string().optional(),
+    updatedAt: z.string().optional()
 })
 export const projectStatsSchema = z.object({
     pending: z.number(),
@@ -277,9 +281,15 @@ export const editProjectSchema = projectSchema.pick({
     projectName: true,
     clientName: true,
     description: true,
+    brand: true,
 })
 export type Project = z.infer<typeof projectSchema>
-export type ProjectFormData = Pick<Project, 'clientName' | 'projectName' | 'description' >
+export type ProjectFormData = {
+    projectName: string
+    clientName?: string
+    description?: string
+    brand?: string
+}
 
 /** Team */
 const teamMemberSchema = userSchema.pick({

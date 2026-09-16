@@ -31,6 +31,7 @@ import WeekGrid from '@/components/schedule/WeekGrid'
 import MonthGrid from '@/components/schedule/MonthGrid'
 import QuarterGrid from '@/components/schedule/QuarterGrid'
 import UnscheduledPanel from '@/components/schedule/UnscheduledPanel'
+import WorkingHoursEditor from '@/components/schedule/WorkingHoursEditor'
 import BlockFormModal from '@/components/schedule/BlockFormModal'
 import QuickCreateTask from '@/components/tasks/QuickCreateTask'
 
@@ -187,6 +188,22 @@ export default function MyWeekView() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['week'] })
             queryClient.invalidateQueries({ queryKey: ['user'] })
+        }
+    })
+
+    /** Distinta de `savePrefs`: esta guarda el horario real de la persona que
+     *  se está mirando, no una preferencia de quien mira. Por eso invalida
+     *  también el panel del equipo, que calcula la capacidad esperada a
+     *  partir de ese mismo horario. */
+    const { mutate: saveMemberPrefs, isPending: savingMemberPrefs } = useMutation({
+        mutationFn: updateSchedulePreferences,
+        onError: (error: Error) => toast.error(error.message),
+        onSuccess: () => {
+            toast.success('Horario actualizado')
+            queryClient.invalidateQueries({ queryKey: ['week'] })
+            queryClient.invalidateQueries({ queryKey: ['range'] })
+            queryClient.invalidateQueries({ queryKey: ['unscheduled'] })
+            queryClient.invalidateQueries({ queryKey: ['teamBoard'] })
         }
     })
 
@@ -420,6 +437,22 @@ export default function MyWeekView() {
                             )
                         })}
                     </div>
+                )}
+
+                {/* El horario real de la otra persona: distinto de "Franja",
+                    que es cómo yo la veo. Solo la encargada lo edita, y solo
+                    mientras mira ese calendario. */
+                }
+                {currentUser?.role === 'manager' && viewingOther && week && (
+                    <WorkingHoursEditor
+                        personName={week.user.name.split(' ')[0]}
+                        prefs={week.schedulePrefs}
+                        saving={savingMemberPrefs}
+                        onSave={schedulePrefs => saveMemberPrefs({
+                            userId: viewedUserId,
+                            schedulePrefs
+                        })}
+                    />
                 )}
 
                 <div className="ml-auto flex flex-wrap items-center gap-2">

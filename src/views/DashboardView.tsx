@@ -10,6 +10,7 @@ import { DashboardProject } from '@/types'
 import DeleteProjectModal from '@/components/projects/DeleteProjectModal'
 import { Badge, Button, EmptyState, PageHeader } from '@/components/ui'
 import { LABEL_ORDER, labelPalette, labelTranslations } from '@/utils/taskLabels'
+import CreateProjectModal from '@/components/projects/CreateProjectModal'
 
 /** Barra de avance partida por etiqueta: se ve de un vistazo cuánto queda
  *  pendiente, en proceso, por validar y listo sin abrir el proyecto. */
@@ -55,7 +56,9 @@ function ProjectCard({ project, isOwner, onDelete }: {
                     >
                         {project.projectName}
                     </Link>
-                    <p className="text-xs text-ink-subtle truncate mt-0.5">{project.clientName}</p>
+                    {project.clientName && (
+                        <p className="text-xs text-ink-subtle truncate mt-0.5">{project.clientName}</p>
+                    )}
                 </div>
 
                 <Menu as="div" className="relative shrink-0">
@@ -150,11 +153,12 @@ export default function DashboardView() {
                 title="Proyectos"
                 subtitle="Trabajos con objetivo, entregables y cierre."
                 actions={
-                    <Link to="/projects/create">
-                        <Button variant="primary">
-                            <PlusIcon className="w-4 h-4" /> Nuevo proyecto
-                        </Button>
-                    </Link>
+                    <Button
+                        variant="primary"
+                        onClick={() => navigate(location.pathname + '?newProject=true')}
+                    >
+                        <PlusIcon className="w-4 h-4" /> Nuevo proyecto
+                    </Button>
                 }
             />
 
@@ -164,9 +168,13 @@ export default function DashboardView() {
                         title="Todavía no hay proyectos"
                         hint="Un proyecto agrupa etapas, entregables y validaciones. Para el trabajo rápido del día a día usa Mantenimiento."
                         action={
-                            <Link to="/projects/create">
-                                <Button variant="primary" size="sm">Crear el primero</Button>
-                            </Link>
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => navigate(location.pathname + '?newProject=true')}
+                            >
+                                Crear el primero
+                            </Button>
                         }
                     />
                 </div>
@@ -184,6 +192,7 @@ export default function DashboardView() {
             )}
 
             <DeleteProjectModal />
+            <CreateProjectModal />
         </>
     )
 }

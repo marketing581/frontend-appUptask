@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
+import { Dialog, Transition } from '@headlessui/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import { LockClosedIcon, PlusIcon, UsersIcon } from '@heroicons/react/24/outline'
@@ -242,28 +243,52 @@ export default function MemosView() {
                 </ul>
             )}
 
-            {/* Panel lateral: la nota se lee junto al tablero, sin perder el contexto */}
-            {open && (
-                <div className="fixed inset-0 z-40 flex">
-                    <div
-                        className="flex-1 bg-ink/30"
-                        onClick={() => setOpenId(null)}
-                        aria-hidden
-                    />
-                    <aside className="w-full max-w-xl bg-surface shadow-overlay border-l border-line">
-                        <MemoEditor
-                            memo={open}
-                            canEdit={ownerIdOf(open) === currentUser?._id || open.visibility === 'team'}
-                            canDelete={ownerIdOf(open) === currentUser?._id || currentUser?.role === 'manager'}
-                            isOwner={ownerIdOf(open) === currentUser?._id}
-                            saving={saving}
-                            onSave={changes => save({ memoId: open._id, changes: changes as never })}
-                            onDelete={() => remove(open._id)}
-                            onClose={() => setOpenId(null)}
-                        />
-                    </aside>
-                </div>
-            )}
+            {/* La nota se abre como una ventana propia, no pegada al costado:
+                así queda igual de enfocada estando dos notas o veinte tarjetas
+                detrás. En el teléfono, sin margen alrededor: ahí una nota
+                ocupa la pantalla entera, como el resto de la app en ese
+                tamaño. */}
+            <Transition appear show={!!open} as={Fragment}>
+                <Dialog as="div" className="relative z-40" onClose={() => setOpenId(null)}>
+                    <Transition.Child
+                        as={Fragment}
+                        enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
+                        leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
+                    >
+                        <div className="fixed inset-0 bg-ink/40" />
+                    </Transition.Child>
+
+                    <div className="fixed inset-0 overflow-y-auto">
+                        <div className="flex min-h-full items-center justify-center sm:p-4">
+                            <Transition.Child
+                                as={Fragment}
+                                enter="ease-out duration-200"
+                                enterFrom="opacity-0 scale-95 sm:scale-100 sm:translate-y-2"
+                                enterTo="opacity-100 scale-100 sm:translate-y-0"
+                                leave="ease-in duration-150"
+                                leaveFrom="opacity-100 scale-100 sm:translate-y-0"
+                                leaveTo="opacity-0 scale-95 sm:scale-100 sm:translate-y-2"
+                            >
+                                <Dialog.Panel className="w-full h-full sm:h-[85vh] sm:max-w-2xl
+                                    sm:rounded-xl bg-surface shadow-overlay overflow-hidden">
+                                    {open && (
+                                        <MemoEditor
+                                            memo={open}
+                                            canEdit={ownerIdOf(open) === currentUser?._id || open.visibility === 'team'}
+                                            canDelete={ownerIdOf(open) === currentUser?._id || currentUser?.role === 'manager'}
+                                            isOwner={ownerIdOf(open) === currentUser?._id}
+                                            saving={saving}
+                                            onSave={changes => save({ memoId: open._id, changes: changes as never })}
+                                            onDelete={() => remove(open._id)}
+                                            onClose={() => setOpenId(null)}
+                                        />
+                                    )}
+                                </Dialog.Panel>
+                            </Transition.Child>
+                        </div>
+                    </div>
+                </Dialog>
+            </Transition>
         </>
     )
 }

@@ -23,14 +23,9 @@ export default function ProjectDetailsView() {
         retry: false
     })
 
-    /** Mismo alcance que el servidor: pertenecer al proyecto habilita trabajar
-     *  en sus tareas; ser su responsable habilita cambiar el proyecto. */
-    const belongsToProject = useMemo(() => {
-        if (!data || !user) return false
-        return data.manager === user._id
-            || data.team?.some(memberId => memberId === user._id)
-            || user.role === 'manager'
-    }, [data, user])
+    // El equipo comparte todos los proyectos: cualquier cuenta confirmada
+    // puede añadir y editar tareas, igual que permite el servidor.
+    const belongsToProject = !!user
 
     const isProjectOwner = useMemo(
         () => !!data && !!user && (isManager(data.manager, user._id) || user.role === 'manager'),
