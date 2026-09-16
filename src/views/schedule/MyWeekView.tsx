@@ -7,6 +7,7 @@ import {
     getScheduleMembers,
     getUnscheduledTasks,
     getWeekSchedule,
+    leaveTimeBlock,
     updateSchedulePreferences,
     updateTimeBlock
 } from '@/api/ScheduleAPI'
@@ -20,7 +21,7 @@ import { TaskLabel } from '@/utils/taskLabels'
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from '@heroicons/react/24/outline'
 import { Avatar, Badge, Button, PageHeader } from '@/components/ui'
 import { useAuth } from '@/hooks/useAuth'
-import { TimeBlock } from '@/types'
+import { GuestConflict, TimeBlock } from '@/types'
 import { addDays, durationMinutes, formatDuration, formatRangeLabel } from '@/utils/datetime'
 import WeekGrid from '@/components/schedule/WeekGrid'
 import UnscheduledPanel from '@/components/schedule/UnscheduledPanel'
@@ -71,9 +72,16 @@ export default function MyWeekView() {
         queryClient.invalidateQueries({ queryKey: ['day'] })
     }
 
-    const warnConflicts = (conflicts?: TimeBlock[]) => {
+    const warnConflicts = (conflicts?: TimeBlock[], guestConflicts?: GuestConflict[]) => {
         if (conflicts && conflicts.length > 0) {
             toast.warn(`Se cruza con ${conflicts.length} bloque(s) ya programado(s). No se movió nada automáticamente.`)
+        }
+        // Etiquetar a alguien le ocupa una hora: si ya tenía algo ahí, se dice.
+        // No se impide —a veces se solapa a propósito—, pero no se oculta.
+        for (const row of guestConflicts ?? []) {
+            toast.warn(
+                `${row.user.name.split(' ')[0]} ya tiene ${row.count} bloque(s) a esa hora.`
+            )
         }
     }
 
@@ -81,8 +89,12 @@ export default function MyWeekView() {
         mutationFn: createTimeBlock,
         onError: (error: Error) => toast.error(error.message),
         onSuccess: data => {
-            toast.success('Bloque programado')
-            warnConflicts(data?.conflicts)
+            toast.success(
+                (data?.block.guests?.length ?? 0) > 0
+                    ? 'Bloque programado y compartido'
+                    : 'Bloque programado'
+            )
+            warnConflicts(data?.conflicts, data?.guestConflicts)
             invalidate()
             setModal({ open: false, start: null, blockId: null })
             setSelectedTaskId(null)
@@ -96,7 +108,17 @@ export default function MyWeekView() {
             invalidate()
         },
         onSuccess: data => {
-            warnConflicts(data?.conflicts)
+            warnConflicts(data?.conflicts, data?.guestConflicts)
+            invalidate()
+            setModal({ open: false, start: null, blockId: null })
+        }
+    })
+
+    const { mutate: leaveBlock } = useMutation({
+        mutationFn: leaveTimeBlock,
+        onError: (error: Error) => toast.error(error.message),
+        onSuccess: () => {
+            toast.success('Te quitaste del bloque')
             invalidate()
             setModal({ open: false, start: null, blockId: null })
         }
@@ -194,7 +216,8 @@ export default function MyWeekView() {
     }
 
     const handleSubmitBlock = async (payload: {
-        taskId: string | null, newTaskName: string | null, start: Date, end: Date, note: string
+        taskId: string | null, newTaskName: string | null
+        start: Date, end: Date, note: string, guests: string[]
     }) => {
         // Crear la tarea tarda, y hasta que arranca la mutación del bloque el
         // botón seguiría activo: un segundo envío duplicaría tarea y bloque.
@@ -208,14 +231,16 @@ export default function MyWeekView() {
     }
 
     const submitBlock = async (payload: {
-        taskId: string | null, newTaskName: string | null, start: Date, end: Date, note: string
+        taskId: string | null, newTaskName: string | null
+        start: Date, end: Date, note: string, guests: string[]
     }) => {
         if (modalBlock) {
             moveBlock({
                 blockId: modalBlock._id,
                 start: payload.start.toISOString(),
                 end: payload.end.toISOString(),
-                note: payload.note
+                note: payload.note,
+                guests: payload.guests
             })
             return
         }
@@ -240,7 +265,8 @@ export default function MyWeekView() {
             start: payload.start.toISOString(),
             end: payload.end.toISOString(),
             note: payload.note,
-            userId: viewedUserId
+            userId: viewedUserId,
+            guests: payload.guests
         })
     }
 
@@ -355,6 +381,7 @@ export default function MyWeekView() {
                             blockId, start: start.toISOString(), end: end.toISOString()
                         })}
                         onSelect={block => setModal({ open: true, start: null, blockId: block._id })}
+                        calendarOwnerId={viewedUserId ?? currentUser?._id ?? ''}
                         onDropTask={(taskId, start, minutes) => {
                             if (isCreating) return
                             createBlock({
@@ -408,6 +435,10 @@ export default function MyWeekView() {
                 isSaving={isCreating || isSubmitting}
                 onChangeTaskLabel={handleChangeTaskLabel}
                 isChangingLabel={isChangingStatus || isRequestingReview || isApproving}
+                members={members ?? []}
+                calendarOwnerId={viewedUserId ?? currentUser?._id ?? ''}
+                currentUserId={currentUser?._id ?? ''}
+                onLeave={leaveBlock}
             />
         </>
     )

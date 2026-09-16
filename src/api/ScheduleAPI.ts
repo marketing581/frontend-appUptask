@@ -7,7 +7,8 @@ import {
     unscheduledListSchema,
     weekScheduleSchema,
     SchedulePrefs,
-    TimeBlock
+    TimeBlock,
+    GuestConflict
 } from '@/types'
 
 const extractError = (error: unknown, fallback: string) => {
@@ -87,11 +88,21 @@ export type BlockPayload = {
     end: string
     note?: string
     userId?: string
+    /** Personas etiquetadas en un pendiente compartido. */
+    guests?: string[]
+}
+
+/** Respuesta de crear o mover un bloque: además del bloque, con qué se cruza
+ *  —lo propio y lo de cada persona etiquetada—. */
+type BlockResult = {
+    block: TimeBlock
+    conflicts: TimeBlock[]
+    guestConflicts: GuestConflict[]
 }
 
 export async function createTimeBlock(payload: BlockPayload) {
     try {
-        const { data } = await api.post<{ block: TimeBlock, conflicts: TimeBlock[] }>(
+        const { data } = await api.post<BlockResult>(
             '/schedule/blocks',
             { ...payload, user: payload.userId }
         )
@@ -101,17 +112,29 @@ export async function createTimeBlock(payload: BlockPayload) {
     }
 }
 
-export async function updateTimeBlock({ blockId, start, end, note }: {
-    blockId: string, start?: string, end?: string, note?: string
+export async function updateTimeBlock({ blockId, start, end, note, guests }: {
+    blockId: string, start?: string, end?: string, note?: string, guests?: string[]
 }) {
     try {
-        const { data } = await api.put<{ block: TimeBlock, conflicts: TimeBlock[] }>(
+        const { data } = await api.put<BlockResult>(
             `/schedule/blocks/${blockId}`,
-            { start, end, note }
+            // `guests` solo viaja si se tocó: enviarlo siempre borraría las
+            // etiquetas al arrastrar un bloque para moverlo.
+            guests ? { start, end, note, guests } : { start, end, note }
         )
         return data
     } catch (error) {
         extractError(error, 'No se pudo mover el bloque')
+    }
+}
+
+/** Dejar de aparecer en un bloque compartido en el que te etiquetaron. */
+export async function leaveTimeBlock(blockId: string) {
+    try {
+        const { data } = await api.post(`/schedule/blocks/${blockId}/leave`)
+        return data
+    } catch (error) {
+        extractError(error, 'No se pudo quitar la etiqueta')
     }
 }
 

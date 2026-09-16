@@ -11,6 +11,8 @@ import {
     minutesFromWindowStart
 } from '@/utils/datetime'
 import { ALERT_COLOR, getTaskLabel, labelPalette, labelTranslations } from '@/utils/taskLabels'
+import { firstNameOf, personId } from '@/utils/people'
+import { Avatar } from '@/components/ui'
 
 /** Alto en píxeles de cada intervalo de 15 minutos. */
 const SLOT_HEIGHT = 16
@@ -37,6 +39,9 @@ type Props = {
     onSelect: (block: TimeBlock) => void
     /** Soltar una tarea arrastrada desde "Por programar" sobre una hora. */
     onDropTask: (taskId: string, start: Date, minutes: number) => void
+    /** De quién es el calendario en pantalla: lo que aparezca de otra persona
+     *  es un bloque compartido y no se mueve desde aquí. */
+    calendarOwnerId: string
 }
 
 /** Reparte en carriles los bloques que se superponen, para que ninguno tape a otro. */
@@ -82,7 +87,7 @@ function blockTone(block: TimeBlock) {
 
 export default function WeekGrid({
     timezone, windowStartHour, windowEndHour, days, blocks,
-    onCreateAt, onCommit, onSelect, onDropTask
+    onCreateAt, onCommit, onSelect, onDropTask, calendarOwnerId
 }: Props) {
     const bodyRef = useRef<HTMLDivElement>(null)
     const [drag, setDrag] = useState<DragState | null>(null)
@@ -308,22 +313,39 @@ export default function WeekGrid({
                                         const height = (length / SLOT_MINUTES) * SLOT_HEIGHT
                                         const compact = height < 34
 
+                                        // Un bloque que aparece aquí pero es de otro
+                                        // calendario está compartido: se ve, no se toca.
+                                        const ownerId = personId(block.user)
+                                        const borrowed = !!ownerId && ownerId !== calendarOwnerId
+                                        const guests = block.guests ?? []
+                                        const shared = borrowed || guests.length > 0
+
                                         return (
                                             <div
                                                 key={block._id}
                                                 role="button"
                                                 tabIndex={0}
+                                                title={borrowed
+                                                    ? `Compartido por ${firstNameOf(block.user)} · no se mueve desde aquí`
+                                                    : undefined}
                                                 className={`absolute rounded border-l-4 px-1.5 py-0.5 overflow-hidden text-left
-                                                    ${isDragging ? 'opacity-80 shadow-lg z-20' : 'z-10 hover:shadow'}`}
+                                                    ${isDragging ? 'opacity-80 shadow-lg z-20' : 'z-10 hover:shadow'}
+                                                    ${borrowed ? 'cursor-default border-dashed' : ''}`}
                                                 style={{
                                                     top: (offset / SLOT_MINUTES) * SLOT_HEIGHT,
                                                     height,
                                                     left: `calc(${(lane * 100) / lanes}% + 2px)`,
                                                     width: `calc(${100 / lanes}% - 4px)`,
                                                     borderLeftColor: tone.borderColor,
-                                                    backgroundColor: tone.background
+                                                    backgroundColor: tone.background,
+                                                    // El bloque prestado se distingue del propio sin
+                                                    // depender del color, que ya dice otra cosa.
+                                                    ...(borrowed ? { borderLeftStyle: 'dashed' as const } : {})
                                                 }}
-                                                onPointerDown={event => beginDrag(event, block, 'move')}
+                                                onPointerDown={event => {
+                                                    if (borrowed) return
+                                                    beginDrag(event, block, 'move')
+                                                }}
                                                 onClick={event => {
                                                     event.stopPropagation()
                                                     if (!drag) onSelect(block)
@@ -335,14 +357,39 @@ export default function WeekGrid({
                                                     }
                                                 }}
                                             >
-                                                <p className="text-[11px] font-bold text-slate-800 truncate leading-tight">
-                                                    {task?.name ?? 'Tarea'}
-                                                </p>
+                                                <div className="flex items-start gap-1">
+                                                    <p className="flex-1 min-w-0 text-[11px] font-bold
+                                                        text-slate-800 truncate leading-tight">
+                                                        {task?.name ?? 'Tarea'}
+                                                    </p>
+                                                    {/* Con quién se comparte, como en un calendario
+                                                        al uso: las caras cuentan la historia sin
+                                                        gastar una línea de texto. */}
+                                                    {shared && !compact && (
+                                                        <span className="flex -space-x-1 shrink-0 mt-px">
+                                                            {borrowed && <Avatar name={firstNameOf(block.user)} size="xs" />}
+                                                            {guests.slice(0, 2).map(guest => (
+                                                                <Avatar
+                                                                    key={personId(guest)}
+                                                                    name={firstNameOf(guest) || '?'}
+                                                                    size="xs"
+                                                                />
+                                                            ))}
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 {!compact && (
                                                     <>
                                                         <p className="text-[10px] text-slate-600 leading-tight">
                                                             {formatTime(start, timezone)}–{formatTime(end, timezone)} · {formatDuration(length)}
                                                         </p>
+                                                        {shared && (
+                                                            <p className="text-[10px] font-semibold text-slate-600 truncate leading-tight">
+                                                                {borrowed
+                                                                    ? `Compartido por ${firstNameOf(block.user)}`
+                                                                    : `Con ${guests.map(firstNameOf).filter(Boolean).join(', ')}`}
+                                                            </p>
+                                                        )}
                                                         {height > 60 && (
                                                             <p className="text-[10px] text-slate-500 truncate leading-tight">
                                                                 {task?.status ? labelTranslations[getTaskLabel(task as never)] : ''}
@@ -360,7 +407,7 @@ export default function WeekGrid({
                                                 {/* Asa de redimensionado. En bloques cortos ocuparía casi
                                                     toda la altura e impediría moverlos, así que ahí la
                                                     duración se cambia desde el formulario. */}
-                                                {height >= 32 && (
+                                                {height >= 32 && !borrowed && (
                                                     <div
                                                         className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize"
                                                         onPointerDown={event => beginDrag(event, block, 'resize')}

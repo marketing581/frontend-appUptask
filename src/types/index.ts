@@ -152,15 +152,31 @@ export type QuickTaskFormData = {
 }
 
 /** Bloques de calendario */
+/** Persona tal como viene poblada dentro de un bloque. */
+const blockPersonSchema = z.union([
+    z.object({ _id: z.string(), name: z.string(), email: z.string().optional() }),
+    z.string()
+])
+
 export const timeBlockSchema = z.object({
     _id: z.string(),
     task: z.union([taskSchema.partial().extend({ _id: z.string(), name: z.string() }), z.string()]),
-    user: z.string(),
+    /** Calendario al que pertenece el bloque. */
+    user: blockPersonSchema,
     start: z.string(),
     end: z.string(),
     note: z.string().default(''),
-    createdBy: z.string().optional()
+    createdBy: z.string().optional(),
+    /** Personas etiquetadas: lo ven en su calendario. */
+    guests: z.array(blockPersonSchema).default([])
 })
+
+/** Aviso de que alguien etiquetado ya tenía algo a esa hora. */
+export const guestConflictSchema = z.object({
+    user: z.object({ _id: z.string(), name: z.string() }),
+    count: z.number()
+})
+export type GuestConflict = z.infer<typeof guestConflictSchema>
 export type TimeBlock = z.infer<typeof timeBlockSchema>
 
 export const weekScheduleSchema = z.object({
