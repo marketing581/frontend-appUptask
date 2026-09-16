@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { CheckIcon, ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
-import { getDaySchedule } from '@/api/ScheduleAPI'
+import { getDaySchedule, getScheduleMembers } from '@/api/ScheduleAPI'
 import {
     deleteWorkTask, getMyTasks, getTaskPage, updateWorkTask, updateWorkTaskStatus
 } from '@/api/WorkTaskAPI'
@@ -14,6 +14,7 @@ import {
     ALERT_COLOR, frequencyBadge, frequencyShort, getTaskLabel, labelPalette, labelTranslations
 } from '@/utils/taskLabels'
 import { Avatar, Badge, Button, EmptyState, PageHeader, StatTile } from '@/components/ui'
+import PersonSwitcher from '@/components/team/PersonSwitcher'
 import QuickCreateTask from '@/components/tasks/QuickCreateTask'
 import WorkTaskRow from '@/components/tasks/WorkTaskRow'
 import { canEditTask, canHideTask } from '@/utils/taskPermissions'
@@ -151,7 +152,7 @@ function PastTasks({ userId }: { userId?: string }) {
                 <div>
                     <h2 className="text-sm font-bold text-ink">Pendientes pasados</h2>
                     <p className="text-2xs text-ink-subtle leading-none">
-                        Lo puntual que ya cerraste
+                        Lo puntual ya cerrado
                     </p>
                 </div>
                 <span className="flex items-center gap-2">
@@ -221,15 +222,35 @@ export default function MyWorkView() {
     const queryClient = useQueryClient()
     const today = useMemo(() => new Date(), [])
 
+    /** La encargada puede abrir esta misma pantalla para Nicole o Sofianne: es
+     *  la vista de «qué le toca a una persona», y necesita responderla también
+     *  de quien coordina. Las demás solo se ven a sí mismas, y el servidor
+     *  aplica esa misma regla. */
+    const isManager = currentUser?.role === 'manager'
+    const [viewing, setViewing] = useState<string>('')
+    const personId = viewing || currentUser?._id
+
+    const { data: members } = useQuery({
+        queryKey: ['scheduleMembers'],
+        queryFn: getScheduleMembers,
+        enabled: isManager,
+        retry: false
+    })
+
+    const person = members?.find(member => member._id === personId)
+    const isSelf = !viewing || viewing === currentUser?._id
+
     const { data: day } = useQuery({
-        queryKey: ['day', today.toISOString().slice(0, 10)],
-        queryFn: () => getDaySchedule({ date: today }),
+        queryKey: ['day', today.toISOString().slice(0, 10), personId],
+        queryFn: () => getDaySchedule({ date: today, userId: isSelf ? undefined : personId }),
+        enabled: !!personId,
         retry: false
     })
 
     const { data: tasks } = useQuery({
-        queryKey: ['myTasks'],
-        queryFn: () => getMyTasks(),
+        queryKey: ['myTasks', personId],
+        queryFn: () => getMyTasks({ assignee: personId }),
+        enabled: !!personId,
         retry: false
     })
 
@@ -266,14 +287,8 @@ export default function MyWorkView() {
         onSuccess: () => { toast.success('Pendiente eliminado'); refresh() }
     })
 
-    const mine = useMemo(
-        () => (tasks ?? []).filter(task => {
-            const assignee = task.assignee
-            const id = assignee && typeof assignee !== 'string' ? assignee._id : assignee
-            return id === currentUser?._id
-        }),
-        [tasks, currentUser]
-    )
+    // El filtro por responsable lo hace la consulta; aquí solo se reparte.
+    const mine = useMemo(() => tasks ?? [], [tasks])
 
     /** Tres naturalezas de trabajo, que se piensan y se despachan distinto:
      *   - mantenimiento: vuelve solo, se cierra en el día;
@@ -288,6 +303,7 @@ export default function MyWorkView() {
     const parts = getZonedParts(today, timezone)
     const weekdayIndex = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12)).getUTCDay()
 
+    const firstName = person?.name.split(' ')[0] ?? ''
     const blocked = mine.filter(task => task.onHold?.active)
     const waitingValidation = mine.filter(task => getTaskLabel(task) === 'toValidate')
 
@@ -305,7 +321,9 @@ export default function MyWorkView() {
     return (
         <>
             <PageHeader
-                title={`Hola, ${currentUser?.name.split(' ')[0] ?? ''}`}
+                title={isSelf
+                    ? `Hola, ${currentUser?.name.split(' ')[0] ?? ''}`
+                    : `Trabajo de ${person?.name.split(' ')[0] ?? ''}`}
                 subtitle={`${WEEKDAYS[weekdayIndex]} ${parts.day} de ${MONTHS[parts.month - 1]}`}
                 actions={
                     <Link to="/semana">
@@ -313,6 +331,18 @@ export default function MyWorkView() {
                     </Link>
                 }
             />
+
+            {isManager && members && members.length > 1 && (
+                <div className="mb-4">
+                    <PersonSwitcher
+                        members={members}
+                        value={personId ?? ''}
+                        onChange={setViewing}
+                        currentUserId={currentUser?._id}
+                        selfLabel="Lo mío"
+                    />
+                </div>
+            )}
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
                 <StatTile
@@ -344,7 +374,9 @@ export default function MyWorkView() {
                 <section className="space-y-5">
                     <div className="card overflow-hidden">
                         <div className="flex items-center justify-between px-3 h-11 border-b border-line">
-                            <h2 className="text-sm font-bold text-ink">Mi día</h2>
+                            <h2 className="text-sm font-bold text-ink">
+                                {isSelf ? 'Mi día' : `El día de ${firstName}`}
+                            </h2>
                             <Link to="/semana" className="text-xs font-semibold text-brand-600 hover:underline">
                                 Ver calendario
                             </Link>
@@ -353,7 +385,9 @@ export default function MyWorkView() {
                         {(day?.blocks.length ?? 0) === 0 ? (
                             <EmptyState
                                 title="Nada programado hoy"
-                                hint="Arrastra pendientes al calendario para saber cuándo harás cada cosa."
+                                hint={isSelf
+                                    ? 'Arrastra pendientes al calendario para saber cuándo harás cada cosa.'
+                                    : `${firstName} todavía no ha reservado horas para hoy.`}
                             />
                         ) : (
                             <ul className="divide-y divide-line">
@@ -411,13 +445,19 @@ export default function MyWorkView() {
                         </div>
 
                         <div className="px-2 py-2 border-b border-line">
-                            <QuickCreateTask label="Nuevo pendiente" defaults={{ frequency: 'none' }} />
+                            <QuickCreateTask
+                                label="Nuevo pendiente"
+                                showFrequency={false}
+                                defaults={{ frequency: 'none', assignee: personId }}
+                            />
                         </div>
 
                         {oneOff.length === 0 ? (
                             <EmptyState
                                 title="Sin pendientes sueltos"
-                                hint="Lo que surja y no se repita, anótalo aquí."
+                                hint={isSelf
+                                    ? 'Lo que surja y no se repita, anótalo aquí.'
+                                    : `Lo que le surja a ${firstName} y no se repita irá aquí.`}
                             />
                         ) : (
                             <ul className="divide-y divide-line max-h-96 overflow-y-auto">
@@ -434,7 +474,7 @@ export default function MyWorkView() {
                         )}
                     </div>
 
-                    <PastTasks userId={currentUser?._id} />
+                    <PastTasks userId={personId} />
                 </section>
 
                 {/* Columna derecha: seguimiento */}

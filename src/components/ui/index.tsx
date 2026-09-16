@@ -52,14 +52,16 @@ const BADGE_VARIANTS = {
     alert: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200'
 }
 
-export function Badge({ children, className, variant = 'neutral', dot }: {
+export function Badge({ children, className, variant = 'neutral', dot, title }: {
     children: ReactNode
     className?: string
     variant?: keyof typeof BADGE_VARIANTS
     dot?: string
+    /** Texto completo cuando la etiqueta va abreviada por falta de sitio. */
+    title?: string
 }) {
     return (
-        <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5
+        <span title={title} className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5
             text-2xs font-semibold whitespace-nowrap ${className ?? BADGE_VARIANTS[variant]}`}>
             {dot && <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dot }} />}
             {children}

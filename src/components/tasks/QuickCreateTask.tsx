@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import {
@@ -14,6 +14,7 @@ import { createWorkTask } from '@/api/WorkTaskAPI'
 import { getScheduleMembers } from '@/api/ScheduleAPI'
 import { getBrands } from '@/api/BrandAPI'
 import { useAuth } from '@/hooks/useAuth'
+import { useClickOutside } from '@/hooks/useClickOutside'
 import { QuickTaskFormData, TaskPriority } from '@/types'
 import {
     FREQUENCY_ORDER, TaskFrequency, frequencyTranslations, priorityTranslations
@@ -26,8 +27,13 @@ import { Avatar, Button } from '@/components/ui'
  *  Notion, y el detalle se pide de forma progresiva con filas con icono, como
  *  en el calendario de Google. El contexto se hereda: crear dentro de la fila
  *  "Diario" de Nicole ya deja la cadencia y la responsable puestas, así que lo
- *  habitual es solo escribir el nombre y pulsar Enter. */
+ *  habitual es solo escribir el nombre y pulsar Enter.
+ *
+ *  Las tres formas de salir hacen cosas distintas y predecibles: Enter guarda,
+ *  Esc descarta, y hacer clic fuera guarda lo escrito en vez de tirarlo. Nadie
+ *  pierde una línea por mirar hacia otro lado. */
 
+/** Contexto que hereda el pendiente nuevo según dónde se cree. */
 type Defaults = {
     assignee?: string
     frequency?: TaskFrequency
@@ -41,17 +47,26 @@ type Props = {
     label?: string
     /** Compacto para las celdas de la matriz. */
     dense?: boolean
+    /** La cadencia no se pregunta donde el trabajo ocurre una sola vez. */
+    showFrequency?: boolean
+    /** Abre el formulario ya desplegado, sin pasar por el disparador. */
+    startOpen?: boolean
     onCreated?: () => void
+    onClose?: () => void
 }
 
 const PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent']
 
-export default function QuickCreateTask({ defaults, label = 'Nuevo pendiente', dense, onCreated }: Props) {
+export default function QuickCreateTask({
+    defaults, label = 'Nuevo pendiente', dense,
+    showFrequency = true, startOpen = false, onCreated, onClose
+}: Props) {
     const { data: currentUser } = useAuth()
     const queryClient = useQueryClient()
     const nameRef = useRef<HTMLInputElement>(null)
+    const boxRef = useRef<HTMLDivElement>(null)
 
-    const [open, setOpen] = useState(false)
+    const [open, setOpen] = useState(startOpen)
     const [showDetail, setShowDetail] = useState(false)
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
@@ -110,14 +125,16 @@ export default function QuickCreateTask({ defaults, label = 'Nuevo pendiente', d
         }
     })
 
-    const close = () => {
+    const close = useCallback(() => {
         reset()
         setOpen(false)
-    }
+        onClose?.()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onClose])
 
-    const submit = () => {
+    const buildPayload = () => {
         const trimmed = name.trim()
-        if (trimmed.length === 0 || isPending) return
+        if (trimmed.length === 0) return null
 
         const payload: QuickTaskFormData & Record<string, unknown> = { name: trimmed }
         if (description.trim()) payload.description = description.trim()
@@ -128,13 +145,35 @@ export default function QuickCreateTask({ defaults, label = 'Nuevo pendiente', d
         if (dueDate) payload.dueDate = dueDate
         if (estimate) payload.estimatedMinutes = Number(estimate)
         if (defaults?.project) payload.project = defaults.project
+        return payload
+    }
 
+    const submit = () => {
+        const payload = buildPayload()
+        if (!payload || isPending) return
         create(payload)
     }
+
+    /** Clic fuera: si hay algo escrito se guarda, si no se cierra sin más.
+     *  Cerrar tirando lo escrito castiga un despiste; guardar, como mucho,
+     *  deja un pendiente de sobra que se borra en un clic. */
+    const onOutside = useCallback(() => {
+        if (isPending) return
+        const payload = buildPayload()
+        if (payload) {
+            create(payload, { onSuccess: () => { reset(); setOpen(false); onClose?.() } })
+        } else {
+            close()
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [name, description, assignee, frequency, brand, priority, dueDate, estimate, isPending, close])
+
+    useClickOutside(boxRef, onOutside, open)
 
     const onKeyDown = (event: React.KeyboardEvent) => {
         if (event.key === 'Escape') {
             event.preventDefault()
+            event.stopPropagation()
             close()
         }
         // Enter guarda desde cualquier campo salvo el área de detalle,
@@ -168,6 +207,7 @@ export default function QuickCreateTask({ defaults, label = 'Nuevo pendiente', d
 
     return (
         <div
+            ref={boxRef}
             onKeyDown={onKeyDown}
             className="rounded-md border border-brand-300 bg-surface shadow-raised p-2 space-y-2"
         >
@@ -216,19 +256,21 @@ export default function QuickCreateTask({ defaults, label = 'Nuevo pendiente', d
                     </label>
                 )}
 
-                <label className="flex items-center gap-1.5" title="Cadencia">
-                    <ClockIcon className="w-4 h-4 text-ink-subtle shrink-0" />
-                    <select
-                        value={frequency}
-                        onChange={event => setFrequency(event.target.value as TaskFrequency)}
-                        aria-label="Cadencia"
-                        className={`${fieldClass} pl-1.5 pr-6 max-w-[10rem]`}
-                    >
-                        {FREQUENCY_ORDER.map(item => (
-                            <option key={item} value={item}>{frequencyTranslations[item]}</option>
-                        ))}
-                    </select>
-                </label>
+                {showFrequency && (
+                    <label className="flex items-center gap-1.5" title="Cadencia">
+                        <ClockIcon className="w-4 h-4 text-ink-subtle shrink-0" />
+                        <select
+                            value={frequency}
+                            onChange={event => setFrequency(event.target.value as TaskFrequency)}
+                            aria-label="Cadencia"
+                            className={`${fieldClass} pl-1.5 pr-6 max-w-[10rem]`}
+                        >
+                            {FREQUENCY_ORDER.map(item => (
+                                <option key={item} value={item}>{frequencyTranslations[item]}</option>
+                            ))}
+                        </select>
+                    </label>
+                )}
 
                 {brands && brands.length > 0 && (
                     <label className="flex items-center gap-1.5" title="Área">
@@ -316,7 +358,7 @@ export default function QuickCreateTask({ defaults, label = 'Nuevo pendiente', d
                 )}
 
                 <span className="ml-auto text-2xs text-ink-subtle hidden sm:block">
-                    Enter guarda · Esc cancela
+                    Enter guarda · Esc descarta
                 </span>
             </div>
 
