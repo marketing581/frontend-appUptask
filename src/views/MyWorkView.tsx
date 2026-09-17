@@ -1,18 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { ComponentProps, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { CheckIcon, ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
+import { ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { getScheduleMembers } from '@/api/ScheduleAPI'
 import {
-    deleteWorkTask, getMyTasks, getTaskPage, updateWorkTask, updateWorkTaskStatus
+    deleteWorkTask, getMyTasks, getTaskPage, requestWorkTaskReview,
+    resolveWorkTaskReview, updateWorkTask, updateWorkTaskStatus
 } from '@/api/WorkTaskAPI'
 import { useAuth } from '@/hooks/useAuth'
 import { Task } from '@/types'
 import {
     DEFAULT_TIMEZONE, addDays, dayKey, getZonedParts, startOfWeek
 } from '@/utils/datetime'
-import { getTaskLabel } from '@/utils/taskLabels'
+import { TaskLabel, getTaskLabel } from '@/utils/taskLabels'
 import { Button, EmptyState, PageHeader } from '@/components/ui'
 import PersonSwitcher from '@/components/team/PersonSwitcher'
 import QuickCreateTask from '@/components/tasks/QuickCreateTask'
@@ -104,7 +105,11 @@ function bucketOf(task: Task, now: Date, timezone: string): FinishedBucket {
     return 'older'
 }
 
-function FinishedTasks({ userId, now, timezone }: { userId?: string, now: Date, timezone: string }) {
+type RowProps = Omit<ComponentProps<typeof SimpleTaskRow>, 'task'>
+
+function FinishedTasks({ userId, now, timezone, rowProps }: {
+    userId?: string, now: Date, timezone: string, rowProps: (task: Task) => RowProps
+}) {
     const [open, setOpen] = useState(false)
     const [term, setTerm] = useState('')
     const query = useDebounced(term, 300)
@@ -199,15 +204,7 @@ function FinishedTasks({ userId, now, timezone }: { userId?: string, now: Date, 
                                         </p>
                                         <ul className="divide-y divide-line">
                                             {group.tasks.map(task => (
-                                                <li key={task._id} className="flex items-start gap-2.5 px-3 py-1.5">
-                                                    <CheckIcon
-                                                        className="w-3.5 h-3.5 mt-1 shrink-0 text-stage-done"
-                                                        strokeWidth={3}
-                                                    />
-                                                    <span className="text-sm text-ink-muted leading-snug truncate">
-                                                        {task.name}
-                                                    </span>
-                                                </li>
+                                                <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
                                             ))}
                                         </ul>
                                     </div>
@@ -215,15 +212,7 @@ function FinishedTasks({ userId, now, timezone }: { userId?: string, now: Date, 
                             ) : (
                                 <ul className="divide-y divide-line">
                                     {tasks.map(task => (
-                                        <li key={task._id} className="flex items-start gap-2.5 px-3 py-1.5">
-                                            <CheckIcon
-                                                className="w-3.5 h-3.5 mt-1 shrink-0 text-stage-done"
-                                                strokeWidth={3}
-                                            />
-                                            <span className="text-sm text-ink-muted leading-snug truncate">
-                                                {task.name}
-                                            </span>
-                                        </li>
+                                        <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
                                     ))}
                                 </ul>
                             )}
@@ -337,6 +326,18 @@ export default function MyWorkView() {
         }
     })
 
+    const { mutate: requestReview, isPending: requestingReview } = useMutation({
+        mutationFn: requestWorkTaskReview,
+        onError: (error: Error) => toast.error(error.message),
+        onSuccess: () => { toast.info('Enviada a validación'); refresh() }
+    })
+
+    const { mutate: resolveReview, isPending: resolvingReview } = useMutation({
+        mutationFn: resolveWorkTaskReview,
+        onError: (error: Error) => toast.error(error.message),
+        onSuccess: () => { toast.success('Lista'); refresh() }
+    })
+
     const { mutate: patchTask } = useMutation({
         mutationFn: updateWorkTask,
         onError: (error: Error) => toast.error(error.message),
@@ -388,13 +389,29 @@ export default function MyWorkView() {
     const parts = getZonedParts(now, timezone)
     const weekdayIndex = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12)).getUTCDay()
 
+    /** "Por validar" no es un estado real: es pedir revisión, con su propio
+     *  flujo de aprobación. Cambiar a cualquiera de los otros tres sigue
+     *  siendo un simple cambio de estado —incluso saliendo de "Por
+     *  validar", porque el servidor ya retira la revisión pedida en cuanto
+     *  el estado deja de ser Listo. */
+    const setLabel = (task: Task, next: TaskLabel) => {
+        const current = getTaskLabel(task)
+        if (next === 'toValidate') {
+            requestReview({ taskId: task._id })
+        } else if (next === 'done' && current === 'toValidate') {
+            resolveReview({ taskId: task._id, approved: true })
+        } else {
+            setStatus({ taskId: task._id, status: next })
+        }
+    }
+
     const rowProps = (task: Task) => ({
         weekDays,
         todayKey,
-        busy: changingStatus,
+        busy: changingStatus || requestingReview || resolvingReview,
         canEdit: canEditTask(task, currentUser),
         canHide: canHideTask(task, currentUser),
-        onSetStatus: (taskId: string, status: Task['status']) => setStatus({ taskId, status }),
+        onSetLabel: (_taskId: string, label: TaskLabel) => setLabel(task, label),
         onSetDay: (taskId: string, dayKey: string | null) =>
             patchTask({ taskId, formData: { plannedDate: dayKey } }),
         onPatch: (taskId: string, formData: Record<string, unknown>) =>
@@ -478,18 +495,30 @@ export default function MyWorkView() {
                                     )}
                                 </div>
 
-                                {dayTasks.length === 0 ? (
-                                    <p className={`px-3 py-4 text-2xs text-center flex-1 ${
-                                        isDropTarget ? 'text-brand-600 font-semibold' : 'text-ink-subtle'
-                                    }`}>
-                                        {isDropTarget ? 'Suelta aquí' : 'Nada'}
+                                {dayTasks.length === 0 && isDropTarget ? (
+                                    <p className="px-3 py-4 text-2xs text-center flex-1 text-brand-600 font-semibold">
+                                        Suelta aquí
                                     </p>
                                 ) : (
-                                    <ul className="divide-y divide-line">
-                                        {dayTasks.map(task => (
-                                            <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
-                                        ))}
-                                    </ul>
+                                    <>
+                                        {dayTasks.length > 0 && (
+                                            <ul className="divide-y divide-line">
+                                                {dayTasks.map(task => (
+                                                    <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
+                                                ))}
+                                            </ul>
+                                        )}
+                                        {/* Un día vacío invita a escribir, no solo a
+                                            recibir lo que se arrastre. */}
+                                        <div className={`px-2 py-1.5 ${dayTasks.length > 0 ? 'border-t border-line' : 'flex-1 flex items-center'}`}>
+                                            <QuickCreateTask
+                                                label="Añadir"
+                                                dense
+                                                showFrequency={false}
+                                                defaults={{ assignee: personId, frequency: 'none', plannedDate: day.key }}
+                                            />
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         )
@@ -577,7 +606,7 @@ export default function MyWorkView() {
                     )}
                 </div>
 
-                <FinishedTasks userId={personId} now={now} timezone={timezone} />
+                <FinishedTasks userId={personId} now={now} timezone={timezone} rowProps={rowProps} />
             </div>
         </>
     )

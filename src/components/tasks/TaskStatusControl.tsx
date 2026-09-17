@@ -1,52 +1,62 @@
-import { TaskStatus } from '@/types'
+import { ChevronDownIcon } from '@heroicons/react/20/solid'
+import { TaskLabel } from '@/utils/taskLabels'
 import { labelPalette, labelTranslations } from '@/utils/taskLabels'
 
-/** Cambiar el estado en un solo clic: pendiente, en proceso o listo, sin
- *  menús ni confirmaciones. Es el gesto que más se repite en el día —marcar
- *  algo, avanzarlo, cerrarlo— así que las tres opciones están siempre a la
- *  vista en vez de detrás de una casilla que solo sabe abrir y cerrar.
+/** Cambiar el estado en un solo gesto: pendiente, en proceso, por validar o
+ *  listo. Antes eran tres botones siempre a la vista —y "por validar" ni
+ *  siquiera se podía elegir, solo aparecía sola cuando alguien pedía
+ *  revisión—; tres etiquetas repitiendo lo mismo que ya dice el color no
+ *  aportaba nada. Ahora es una sola etiqueta, la del estado actual, que se
+ *  abre para elegir cualquiera de las cuatro: el mismo `<select>` vestido de
+ *  color que ya resuelve "a qué día de la semana" en `PlanDayPicker`, aquí
+ *  para "en qué punto va" —agrupado igual que el selector de estado de
+ *  Notion: lo pendiente, lo que está en curso, lo completado.
  *
- *  Son tags de texto, con el color de la etiqueta activa: un símbolo pelado
- *  no decía nada por sí solo, y el texto es lo que de verdad se lee de un
- *  vistazo. Solo la opción activa lleva color; las otras dos, en gris, para
- *  no competir con lo que sí importa saber ahora mismo. */
+ *  La flecha nativa del navegador no combina con una etiqueta redondeada de
+ *  color; se apaga con `appearance-none` y se dibuja una propia del mismo
+ *  set de iconos que usa el resto de la app, para que se sienta hecho a
+ *  medida y no un `<select>` sin vestir.
+ *
+ *  Pasar a "Por validar" o resolverla desde ahí no es un simple cambio de
+ *  `status` —tiene su propio flujo de aprobación—, así que quien use este
+ *  control decide qué endpoint llamar según la transición; aquí solo se
+ *  anuncia la etiqueta que se eligió. */
 
-const STEPS: TaskStatus[] = ['pending', 'inProgress', 'done']
+const GROUPS: { heading: string, labels: TaskLabel[] }[] = [
+    { heading: 'Pendiente', labels: ['pending'] },
+    { heading: 'En curso', labels: ['inProgress', 'toValidate'] },
+    { heading: 'Completado', labels: ['done'] }
+]
 
 type Props = {
-    status: TaskStatus
-    /** Verde fijo aunque el estado real sea otro: una tarea recurrente vuelve
-     *  a Pendiente al cerrarla, pero hoy ya está hecha. */
-    doneOverride?: boolean
+    label: TaskLabel
     disabled?: boolean
-    onChange: (status: TaskStatus) => void
+    onChange: (label: TaskLabel) => void
 }
 
-export default function TaskStatusControl({ status, doneOverride, disabled, onChange }: Props) {
-    const effective: TaskStatus = doneOverride ? 'done' : status
-
+export default function TaskStatusControl({ label, disabled, onChange }: Props) {
     return (
-        <div className="flex items-center gap-1 shrink-0" role="group" aria-label="Estado del pendiente">
-            {STEPS.map(step => {
-                const active = effective === step
-                return (
-                    <button
-                        key={step}
-                        type="button"
-                        disabled={disabled}
-                        aria-pressed={active}
-                        onClick={() => !active && onChange(step)}
-                        className={`h-[22px] px-2 rounded-full text-2xs font-bold whitespace-nowrap
-                            transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                            active
-                                ? labelPalette[step].badge
-                                : 'text-ink-subtle hover:bg-slate-100 hover:text-ink-muted'
-                        }`}
-                    >
-                        {labelTranslations[step]}
-                    </button>
-                )
-            })}
-        </div>
+        <span className="relative inline-flex items-center">
+            <select
+                value={label}
+                disabled={disabled}
+                onChange={event => onChange(event.target.value as TaskLabel)}
+                aria-label="Estado del pendiente"
+                className={`h-[22px] pl-2 pr-5 rounded-full text-2xs font-bold border-0 appearance-none
+                    cursor-pointer transition-all hover:brightness-95 active:scale-95
+                    disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100
+                    focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-1
+                    ${labelPalette[label].badge}`}
+            >
+                {GROUPS.map(group => (
+                    <optgroup key={group.heading} label={group.heading}>
+                        {group.labels.map(item => (
+                            <option key={item} value={item}>● {labelTranslations[item]}</option>
+                        ))}
+                    </optgroup>
+                ))}
+            </select>
+            <ChevronDownIcon className="w-3 h-3 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none opacity-60" />
+        </span>
     )
 }

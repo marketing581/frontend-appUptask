@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { EyeIcon, EyeSlashIcon, TrashIcon } from '@heroicons/react/24/outline'
-import { Task, TaskStatus } from '@/types'
-import { ALERT_COLOR, frequencyShort, getTaskLabel, labelPalette } from '@/utils/taskLabels'
+import { Task } from '@/types'
+import { ALERT_COLOR, TaskLabel, frequencyShort, getTaskLabel } from '@/utils/taskLabels'
 import { Badge } from '@/components/ui'
 import TaskStatusControl from './TaskStatusControl'
 import PlanDayPicker, { PlanDay } from './PlanDayPicker'
@@ -22,7 +22,9 @@ type Props = {
     canEdit: boolean
     canHide: boolean
     busy: boolean
-    onSetStatus: (taskId: string, status: TaskStatus) => void
+    /** Cambia el estado —incluido "Por validar", que no es un estado real
+     *  sino su propio flujo de aprobación— por su nombre en cada transición. */
+    onSetLabel: (taskId: string, label: TaskLabel) => void
     /** `null` quita el pendiente de la semana. */
     onSetDay: (taskId: string, dayKey: string | null) => void
     onPatch: (taskId: string, formData: Record<string, unknown>) => void
@@ -31,10 +33,14 @@ type Props = {
 
 export default function SimpleTaskRow({
     task, weekDays, todayKey, canEdit, canHide, busy,
-    onSetStatus, onSetDay, onPatch, onDelete
+    onSetLabel, onSetDay, onPatch, onDelete
 }: Props) {
     const label = getTaskLabel(task)
     const done = label === 'done' || !!task.doneForPeriod
+    // Una recurrente hecha hoy se ve como "Listo" aunque el estado real siga
+    // en Pendiente —vuelve a hacer falta mañana—; el control muestra ese
+    // avance visible, no el dato interno.
+    const effectiveLabel: TaskLabel = task.doneForPeriod ? 'done' : label
     const [name, setName] = useState(task.name)
     const [confirming, setConfirming] = useState(false)
     const inputRef = useRef<HTMLInputElement>(null)
@@ -106,14 +112,10 @@ export default function SimpleTaskRow({
                     espera validación o respuesta, si está vencida. */}
                 <div className="flex flex-wrap items-center gap-1.5 mt-1">
                     <TaskStatusControl
-                        status={task.status}
-                        doneOverride={task.doneForPeriod}
+                        label={effectiveLabel}
                         disabled={busy || !canEdit}
-                        onChange={status => onSetStatus(task._id, status)}
+                        onChange={next => onSetLabel(task._id, next)}
                     />
-                    {label === 'toValidate' && (
-                        <Badge className={labelPalette.toValidate.badge}>Por validar</Badge>
-                    )}
                     {task.onHold?.active && (
                         <span className="text-2xs font-semibold" style={{ color: ALERT_COLOR }}>
                             En espera{task.onHold.waitingOn && ` de ${task.onHold.waitingOn}`}
