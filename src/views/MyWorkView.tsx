@@ -507,7 +507,7 @@ export default function MyWorkView() {
                                                     <SimpleTaskRow
                                                         key={task._id}
                                                         task={task}
-                                                        inWeekColumn
+                                                        dayControl="remove"
                                                         {...rowProps(task)}
                                                     />
                                                 ))}
@@ -605,7 +605,7 @@ export default function MyWorkView() {
                     ) : (
                         <ul className="divide-y divide-line">
                             {visibleBacklog.map(task => (
-                                <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
+                                <SimpleTaskRow key={task._id} task={task} dayControl="none" {...rowProps(task)} />
                             ))}
                         </ul>
                     )}

@@ -22,10 +22,16 @@ type Props = {
     canEdit: boolean
     canHide: boolean
     busy: boolean
-    /** Dentro de una columna de "Mi semana" el día ya se ve en la cabecera:
-     *  repetir el mismo dato en una etiqueta de color en cada fila no dice
-     *  nada nuevo y encima se ve mal. Ahí se cambia por un simple "quitar". */
-    inWeekColumn?: boolean
+    /** Qué control de día mostrar a la derecha:
+     *  - "assign" (por defecto): el selector completo, para elegir un día.
+     *  - "remove": dentro de una columna de "Mi semana" el día ya se ve en la
+     *    cabecera —repetirlo en una etiqueta de color en cada fila no decía
+     *    nada nuevo y se veía mal—, así que ahí solo hace falta poder
+     *    quitarlo.
+     *  - "none": en "Todos mis pendientes" ya se arrastra la fila directo a
+     *    un día de la semana; tener además un botón que hace lo mismo era
+     *    redundante. */
+    dayControl?: 'assign' | 'remove' | 'none'
     /** Cambia el estado —incluido "Por validar", que no es un estado real
      *  sino su propio flujo de aprobación— por su nombre en cada transición. */
     onSetLabel: (taskId: string, label: TaskLabel) => void
@@ -36,7 +42,7 @@ type Props = {
 }
 
 export default function SimpleTaskRow({
-    task, weekDays, todayKey, canEdit, canHide, busy, inWeekColumn,
+    task, weekDays, todayKey, canEdit, canHide, busy, dayControl = 'assign',
     onSetLabel, onSetDay, onPatch, onDelete
 }: Props) {
     const label = getTaskLabel(task)
@@ -152,7 +158,7 @@ export default function SimpleTaskRow({
             </div>
 
             <div className="flex items-center gap-0.5 shrink-0 mt-0.5">
-                {inWeekColumn ? (
+                {dayControl === 'remove' ? (
                     canEdit && (
                         <button
                             type="button"
@@ -166,13 +172,13 @@ export default function SimpleTaskRow({
                             <XMarkIcon className="w-4 h-4" />
                         </button>
                     )
-                ) : (
+                ) : dayControl === 'assign' ? (
                     <PlanDayPicker
                         days={weekDays}
                         activeKey={plannedKey}
                         onSelect={dayKey => onSetDay(task._id, dayKey)}
                     />
-                )}
+                ) : null}
 
                 {canHide && (
                     <button
