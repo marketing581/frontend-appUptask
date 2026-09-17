@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { EyeIcon, EyeSlashIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { EyeIcon, EyeSlashIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { Task } from '@/types'
 import { ALERT_COLOR, TaskLabel, frequencyShort, getTaskLabel } from '@/utils/taskLabels'
 import { Badge } from '@/components/ui'
@@ -22,6 +22,10 @@ type Props = {
     canEdit: boolean
     canHide: boolean
     busy: boolean
+    /** Dentro de una columna de "Mi semana" el día ya se ve en la cabecera:
+     *  repetir el mismo dato en una etiqueta de color en cada fila no dice
+     *  nada nuevo y encima se ve mal. Ahí se cambia por un simple "quitar". */
+    inWeekColumn?: boolean
     /** Cambia el estado —incluido "Por validar", que no es un estado real
      *  sino su propio flujo de aprobación— por su nombre en cada transición. */
     onSetLabel: (taskId: string, label: TaskLabel) => void
@@ -32,7 +36,7 @@ type Props = {
 }
 
 export default function SimpleTaskRow({
-    task, weekDays, todayKey, canEdit, canHide, busy,
+    task, weekDays, todayKey, canEdit, canHide, busy, inWeekColumn,
     onSetLabel, onSetDay, onPatch, onDelete
 }: Props) {
     const label = getTaskLabel(task)
@@ -148,11 +152,27 @@ export default function SimpleTaskRow({
             </div>
 
             <div className="flex items-center gap-0.5 shrink-0 mt-0.5">
-                <PlanDayPicker
-                    days={weekDays}
-                    activeKey={plannedKey}
-                    onSelect={dayKey => onSetDay(task._id, dayKey)}
-                />
+                {inWeekColumn ? (
+                    canEdit && (
+                        <button
+                            type="button"
+                            onClick={() => onSetDay(task._id, null)}
+                            title="Quitar de este día"
+                            aria-label={`Quitar "${task.name}" de este día`}
+                            className="w-7 h-7 grid place-content-center rounded-full text-ink-subtle
+                                opacity-0 group-hover:opacity-100 focus:opacity-100
+                                hover:bg-slate-200 transition-opacity"
+                        >
+                            <XMarkIcon className="w-4 h-4" />
+                        </button>
+                    )
+                ) : (
+                    <PlanDayPicker
+                        days={weekDays}
+                        activeKey={plannedKey}
+                        onSelect={dayKey => onSetDay(task._id, dayKey)}
+                    />
+                )}
 
                 {canHide && (
                     <button

@@ -504,7 +504,12 @@ export default function MyWorkView() {
                                         {dayTasks.length > 0 && (
                                             <ul className="divide-y divide-line">
                                                 {dayTasks.map(task => (
-                                                    <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
+                                                    <SimpleTaskRow
+                                                        key={task._id}
+                                                        task={task}
+                                                        inWeekColumn
+                                                        {...rowProps(task)}
+                                                    />
                                                 ))}
                                             </ul>
                                         )}
