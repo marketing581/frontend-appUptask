@@ -33,7 +33,7 @@ export default function PlanDayPicker({ days, activeKey, onSelect }: Props) {
                 title={active ? `Planificado: ${active.label}` : 'Planificar para un día de la semana'}
                 aria-label={active ? `Planificado para ${active.label}` : 'Planificar para un día de la semana'}
                 className={`h-[22px] min-w-[5.5rem] pl-2 pr-5 rounded-full text-2xs font-bold border-0 leading-[22px] py-0
-                    appearance-none cursor-pointer transition-all hover:brightness-95 active:scale-95
+                    appearance-none bg-none cursor-pointer transition-all hover:brightness-95 active:scale-95
                     focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-1 ${
                     active
                         ? 'bg-amber-100 text-amber-900'

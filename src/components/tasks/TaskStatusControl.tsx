@@ -43,7 +43,7 @@ export default function TaskStatusControl({ label, disabled, onChange }: Props) 
                 onChange={event => onChange(event.target.value as TaskLabel)}
                 aria-label="Estado del pendiente"
                 className={`h-[22px] min-w-[6.5rem] pl-2 pr-5 rounded-full text-2xs font-bold border-0 leading-[22px] py-0
-                    appearance-none cursor-pointer transition-all hover:brightness-95 active:scale-95
+                    appearance-none bg-none cursor-pointer transition-all hover:brightness-95 active:scale-95
                     disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100
                     focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-1
                     ${labelPalette[label].badge}`}
