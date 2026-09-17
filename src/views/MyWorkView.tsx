@@ -34,8 +34,11 @@ const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
 const WEEKDAY_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie']
 
-/** Cuántos pendientes cerrados se traen de golpe al abrir "Finalizados". */
-const FINISHED_PAGE = 40
+/** Cuántos pendientes cerrados se traen de golpe al abrir "Finalizados".
+ *  Más que en el histórico general: aquí hace falta cubrir de sobra la
+ *  semana pasada y la actual para que la agrupación por semana no se quede
+ *  corta a media semana. */
+const FINISHED_PAGE = 80
 
 /** Espera a que se deje de escribir antes de consultar: una petición por
  *  tecla pulsada no aporta nada y satura la lista de resultados a medias. */
@@ -67,7 +70,41 @@ const KIND_FILTERS: { key: Kind, label: string }[] = [
 /** Pendientes ya cerrados: lo que se acaba de terminar y lo que se terminó
  *  hace tiempo. Va plegado, como una libreta de lo hecho: no estorba en el
  *  día a día, pero está a un clic cuando hace falta revisar o buscar algo. */
-function FinishedTasks({ userId }: { userId?: string }) {
+type FinishedBucket = 'thisWeek' | 'lastWeek' | 'older'
+
+const BUCKET_LABEL: Record<FinishedBucket, string> = {
+    thisWeek: 'Esta semana',
+    lastWeek: 'Semana pasada',
+    older: 'Anteriores'
+}
+
+/** A qué semana pertenece, contando en semanas completas desde la actual —
+ *  mismo lunes de arranque que "Mi semana", para que "esta semana" signifique
+ *  lo mismo en las dos partes de la pantalla.
+ *
+ *  Lo importado del histórico de Notion no trae una fecha real de cierre —el
+ *  CSV de origen no la tenía— así que a la base le queda la fecha en que se
+ *  corrió la migración, no la fecha en que de verdad se hizo el trabajo.
+ *  Agruparlo por esa fecha inventada haría que cientos de tareas de hace
+ *  meses parecieran cerradas "esta semana". Se reconoce por la nota de su
+ *  último cambio de estado: si nadie volvió a tocarla desde la importación,
+ *  va directo a "Anteriores"; si alguien la retomó después, esa nota más
+ *  reciente manda y sí cuenta como trabajo real de esta semana. */
+function bucketOf(task: Task, now: Date, timezone: string): FinishedBucket {
+    const lastChange = task.statusHistory[task.statusHistory.length - 1]
+    if (lastChange?.note?.includes('Importado del histórico de Notion')) return 'older'
+
+    const updatedAt = task.updatedAt
+    if (!updatedAt) return 'older'
+    const taskWeek = startOfWeek(new Date(updatedAt), timezone).getTime()
+    const thisWeek = startOfWeek(now, timezone).getTime()
+    const weeksAgo = Math.round((thisWeek - taskWeek) / (7 * 86400000))
+    if (weeksAgo <= 0) return 'thisWeek'
+    if (weeksAgo === 1) return 'lastWeek'
+    return 'older'
+}
+
+function FinishedTasks({ userId, now, timezone }: { userId?: string, now: Date, timezone: string }) {
     const [open, setOpen] = useState(false)
     const [term, setTerm] = useState('')
     const query = useDebounced(term, 300)
@@ -89,6 +126,22 @@ function FinishedTasks({ userId }: { userId?: string }) {
 
     const tasks = useMemo(() => data?.tasks ?? [], [data])
     const total = data?.total ?? 0
+
+    /** Sin buscar, se agrupa por semana —para mapear de un vistazo qué se
+     *  cerró esta semana y qué quedó de la anterior—; buscando algo puntual,
+     *  la agrupación no aporta y se muestra en una sola lista. */
+    const groups = useMemo(() => {
+        if (query) return null
+        const buckets = new Map<FinishedBucket, typeof tasks>()
+        for (const task of tasks) {
+            const key = bucketOf(task, now, timezone)
+            if (!buckets.has(key)) buckets.set(key, [])
+            buckets.get(key)!.push(task)
+        }
+        return (['thisWeek', 'lastWeek', 'older'] as FinishedBucket[])
+            .map(key => ({ key, tasks: buckets.get(key) ?? [] }))
+            .filter(group => group.tasks.length > 0)
+    }, [tasks, query, now, timezone])
 
     return (
         <div className="card overflow-hidden">
@@ -132,21 +185,49 @@ function FinishedTasks({ userId }: { userId?: string }) {
                             hint={query ? undefined : 'Lo que vayas marcando como hecho quedará aquí.'}
                         />
                     ) : (
-                        <>
-                            <ul className={`divide-y divide-line max-h-96 overflow-y-auto
-                                ${isFetching ? 'opacity-50' : ''}`}>
-                                {tasks.map(task => (
-                                    <li key={task._id} className="flex items-start gap-2.5 px-3 py-1.5">
-                                        <CheckIcon
-                                            className="w-3.5 h-3.5 mt-1 shrink-0 text-stage-done"
-                                            strokeWidth={3}
-                                        />
-                                        <span className="text-sm text-ink-muted leading-snug truncate">
-                                            {task.name}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
+                        <div className={`max-h-96 overflow-y-auto ${isFetching ? 'opacity-50' : ''}`}>
+                            {groups ? (
+                                // Agrupado por semana: de un vistazo, qué se
+                                // cerró esta semana y qué quedó de la anterior.
+                                groups.map(group => (
+                                    <div key={group.key}>
+                                        <p className="px-3 pt-2 pb-1 sticky top-0 bg-surface eyebrow">
+                                            {BUCKET_LABEL[group.key]}
+                                            <span className="ml-1.5 text-ink-subtle tabular normal-case font-semibold">
+                                                {group.tasks.length}
+                                            </span>
+                                        </p>
+                                        <ul className="divide-y divide-line">
+                                            {group.tasks.map(task => (
+                                                <li key={task._id} className="flex items-start gap-2.5 px-3 py-1.5">
+                                                    <CheckIcon
+                                                        className="w-3.5 h-3.5 mt-1 shrink-0 text-stage-done"
+                                                        strokeWidth={3}
+                                                    />
+                                                    <span className="text-sm text-ink-muted leading-snug truncate">
+                                                        {task.name}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))
+                            ) : (
+                                <ul className="divide-y divide-line">
+                                    {tasks.map(task => (
+                                        <li key={task._id} className="flex items-start gap-2.5 px-3 py-1.5">
+                                            <CheckIcon
+                                                className="w-3.5 h-3.5 mt-1 shrink-0 text-stage-done"
+                                                strokeWidth={3}
+                                            />
+                                            <span className="text-sm text-ink-muted leading-snug truncate">
+                                                {task.name}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+
                             {total > tasks.length && (
                                 <p className="px-3 py-2 text-2xs text-ink-subtle border-t border-line">
                                     {query
@@ -154,7 +235,7 @@ function FinishedTasks({ userId }: { userId?: string }) {
                                         : `Se muestran los ${tasks.length} más recientes de ${total}.`}
                                 </p>
                             )}
-                        </>
+                        </div>
                     )}
                 </div>
             )}
@@ -219,6 +300,20 @@ export default function MyWorkView() {
     })
 
     const [kindFilter, setKindFilter] = useState<'all' | Kind>('all')
+
+    /** A dónde se soltaría el pendiente que se está arrastrando: la clave de
+     *  un día, o "backlog" para devolverlo a la lista general. Solo pinta el
+     *  resaltado; el `<select>` de cada fila hace exactamente lo mismo sin
+     *  necesidad de arrastrar, para quien prefiera tocar en vez de arrastrar. */
+    const [dragOverKey, setDragOverKey] = useState<string | null>(null)
+    const PLAN_MIME = 'application/x-uptask-plan-task'
+
+    const dropOnto = (targetKey: string | null) => (event: React.DragEvent) => {
+        event.preventDefault()
+        const taskId = event.dataTransfer.getData(PLAN_MIME)
+        if (taskId) patchTask({ taskId, formData: { plannedDate: targetKey } })
+        setDragOverKey(null)
+    }
 
     const refresh = () => {
         queryClient.invalidateQueries({ queryKey: ['myTasks'] })
@@ -340,9 +435,10 @@ export default function MyWorkView() {
                 </p>
             )}
 
-            {/* Mi semana: lunes a viernes, sin hora. Tocar la estrella de un
-                pendiente de la lista de abajo lo trae a uno de estos días; la
-                semana se renueva sola cuando empieza la siguiente. */}
+            {/* Mi semana: lunes a viernes, sin hora. Un pendiente de la lista
+                de abajo se arrastra a uno de estos días, o se elige por su
+                selector si no se quiere arrastrar; la semana se renueva sola
+                cuando empieza la siguiente. */}
             <section className="mb-5">
                 <div className="flex items-baseline justify-between mb-2">
                     <h2 className="text-sm font-bold text-ink">
@@ -357,10 +453,17 @@ export default function MyWorkView() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                     {weekDays.map(day => {
                         const dayTasks = tasksByDay.get(day.key) ?? []
+                        const isDropTarget = dragOverKey === day.key
                         return (
-                            <div key={day.key} className={`card overflow-hidden flex flex-col ${
-                                day.isToday ? 'ring-1 ring-brand-300' : ''
-                            }`}>
+                            <div
+                                key={day.key}
+                                onDragOver={event => { event.preventDefault(); setDragOverKey(day.key) }}
+                                onDragLeave={() => setDragOverKey(current => current === day.key ? null : current)}
+                                onDrop={dropOnto(day.key)}
+                                className={`card overflow-hidden flex flex-col transition-shadow ${
+                                    day.isToday ? 'ring-1 ring-brand-300' : ''
+                                } ${isDropTarget ? 'ring-2 ring-brand-500 shadow-raised' : ''}`}
+                            >
                                 <div className={`flex items-center justify-between px-3 h-9 border-b border-line
                                     shrink-0 ${day.isToday ? 'bg-brand-50' : 'bg-surface-sunken'}`}>
                                     <span className={`text-xs font-bold ${
@@ -376,8 +479,10 @@ export default function MyWorkView() {
                                 </div>
 
                                 {dayTasks.length === 0 ? (
-                                    <p className="px-3 py-4 text-2xs text-ink-subtle text-center flex-1">
-                                        Nada
+                                    <p className={`px-3 py-4 text-2xs text-center flex-1 ${
+                                        isDropTarget ? 'text-brand-600 font-semibold' : 'text-ink-subtle'
+                                    }`}>
+                                        {isDropTarget ? 'Suelta aquí' : 'Nada'}
                                     </p>
                                 ) : (
                                     <ul className="divide-y divide-line">
@@ -394,9 +499,17 @@ export default function MyWorkView() {
 
             <div className="max-w-2xl space-y-5">
                 {/* Todos mis pendientes: una sola lista, sin separar por tipo
-                    salvo que haga falta acotarla. De aquí se jala hacia un día
-                    de "Mi semana" con la estrella de cada fila. */}
-                <div className="card overflow-hidden">
+                    salvo que haga falta acotarla. De aquí se arrastra —o se
+                    elige por el selector de cada fila— hacia un día de "Mi
+                    semana"; arrastrar de vuelta aquí lo quita de la semana. */}
+                <div
+                    onDragOver={event => { event.preventDefault(); setDragOverKey('backlog') }}
+                    onDragLeave={() => setDragOverKey(current => current === 'backlog' ? null : current)}
+                    onDrop={dropOnto(null)}
+                    className={`card overflow-hidden transition-shadow ${
+                        dragOverKey === 'backlog' ? 'ring-2 ring-brand-500 shadow-raised' : ''
+                    }`}
+                >
                     <div className="flex items-center justify-between px-3 h-11 border-b border-line">
                         <h2 className="text-sm font-bold text-ink">
                             Todos mis pendientes
@@ -464,7 +577,7 @@ export default function MyWorkView() {
                     )}
                 </div>
 
-                <FinishedTasks userId={personId} />
+                <FinishedTasks userId={personId} now={now} timezone={timezone} />
             </div>
         </>
     )

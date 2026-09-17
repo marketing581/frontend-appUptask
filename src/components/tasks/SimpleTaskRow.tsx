@@ -63,7 +63,16 @@ export default function SimpleTaskRow({
     const plannedKey = task.plannedDate ? task.plannedDate.slice(0, 10) : null
 
     return (
-        <li className="group flex items-start gap-2 px-3 py-2 hover:bg-surface-sunken transition-colors">
+        <li
+            draggable={canEdit}
+            onDragStart={event => {
+                event.dataTransfer.setData('application/x-uptask-plan-task', task._id)
+                event.dataTransfer.effectAllowed = 'move'
+            }}
+            className={`group flex items-start gap-2 px-3 py-2 hover:bg-surface-sunken transition-colors ${
+                canEdit ? 'cursor-grab active:cursor-grabbing' : ''
+            }`}
+        >
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                     {canEdit ? (
