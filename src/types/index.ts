@@ -97,6 +97,9 @@ export const taskSchema = z.object({
     priority: taskPrioritySchema.default('medium'),
     estimatedMinutes: z.number().nullable().default(null),
     dueDate: z.string().nullable().default(null),
+    /** El día en que se piensa hacer, sin hora. Es lo que arma "Hoy": no es
+     *  un bloque de calendario ni una fecha límite. */
+    plannedDate: z.string().nullable().default(null),
     checklist: z.array(z.object({
         _id: z.string().optional(),
         text: z.string(),
@@ -148,6 +151,7 @@ export type QuickTaskFormData = {
     priority?: TaskPriority
     estimatedMinutes?: number | null
     dueDate?: string | null
+    plannedDate?: string | null
     definitionOfDone?: string
 }
 

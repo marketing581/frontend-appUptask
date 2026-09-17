@@ -3,30 +3,39 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { CheckIcon, ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
-import { getDaySchedule, getScheduleMembers } from '@/api/ScheduleAPI'
+import { getScheduleMembers } from '@/api/ScheduleAPI'
 import {
     deleteWorkTask, getMyTasks, getTaskPage, updateWorkTask, updateWorkTaskStatus
 } from '@/api/WorkTaskAPI'
 import { useAuth } from '@/hooks/useAuth'
 import { Task } from '@/types'
-import { durationMinutes, formatDuration, formatTime, getZonedParts } from '@/utils/datetime'
 import {
-    ALERT_COLOR, frequencyBadge, frequencyShort, getTaskLabel, labelPalette, labelTranslations
-} from '@/utils/taskLabels'
-import { Avatar, Badge, Button, EmptyState, PageHeader, StatTile } from '@/components/ui'
+    DEFAULT_TIMEZONE, addDays, dayKey, getZonedParts, startOfWeek
+} from '@/utils/datetime'
+import { getTaskLabel } from '@/utils/taskLabels'
+import { Button, EmptyState, PageHeader } from '@/components/ui'
 import PersonSwitcher from '@/components/team/PersonSwitcher'
 import QuickCreateTask from '@/components/tasks/QuickCreateTask'
-import WorkTaskRow from '@/components/tasks/WorkTaskRow'
+import SimpleTaskRow from '@/components/tasks/SimpleTaskRow'
+import { PlanDay } from '@/components/tasks/PlanDayPicker'
 import { canEditTask, canHideTask } from '@/utils/taskPermissions'
+
+/** "Mi trabajo": la primera pantalla, pensada para mirarla veinte veces al
+ *  día y saber en un vistazo qué toca.
+ *
+ *  Antes repartía lo mismo en seis tarjetas —el día por horas, pendientes,
+ *  mantenimiento, proyecto, vencidos, esperando aprobación— y había que leer
+ *  las seis para saber qué hacer. Ahora es: una semana simple de lunes a
+ *  viernes sin horas, una sola lista con todo lo abierto de donde se jala lo
+ *  de la semana, y lo que ya se cerró, aparte. */
 
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
     'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+const WEEKDAY_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie']
 
-/** Cuántos pendientes cerrados se traen de golpe. El histórico completo puede
- *  ser de cientos y casi nunca se mira entero: se muestran los últimos y se
- *  dice cuántos quedan. */
-const PAST_PAGE = 40
+/** Cuántos pendientes cerrados se traen de golpe al abrir "Finalizados". */
+const FINISHED_PAGE = 40
 
 /** Espera a que se deje de escribir antes de consultar: una petición por
  *  tecla pulsada no aporta nada y satura la lista de resultados a medias. */
@@ -39,97 +48,38 @@ function useDebounced(value: string, delay: number) {
     return settled
 }
 
-const projectNameOf = (task: Task) =>
-    task.project && typeof task.project !== 'string' ? task.project.projectName : null
+/** Naturaleza del trabajo, solo para poder acotar la lista cuando crece: por
+ *  defecto se ve todo junto, como una sola lista de pendientes. */
+type Kind = 'maintenance' | 'project' | 'oneOff'
 
-/** Fila compacta de solo lectura, para las listas donde no se edita
- *  (lo vencido, lo de proyecto). */
-function TaskRow({ task, onComplete, busy, showProject = true }: {
-    task: Task
-    onComplete: (taskId: string) => void
-    busy: boolean
-    showProject?: boolean
-}) {
-    const label = getTaskLabel(task)
-    const palette = labelPalette[label]
-    const project = projectNameOf(task)
-    const done = label === 'done' || !!task.doneForPeriod
-
-    return (
-        <li className="group flex items-start gap-2.5 px-3 py-2 hover:bg-surface-sunken transition-colors">
-            <button
-                type="button"
-                disabled={busy || done}
-                onClick={() => onComplete(task._id)}
-                aria-label={done ? 'Ya está lista' : `Marcar "${task.name}" como lista`}
-                className={`mt-0.5 w-[18px] h-[18px] shrink-0 rounded-full border-2 grid place-content-center
-                    transition-colors disabled:pointer-events-none ${
-                    done
-                        ? 'bg-stage-done border-stage-done text-white'
-                        : 'border-line-strong text-transparent hover:border-stage-done hover:text-stage-done'
-                }`}
-            >
-                <CheckIcon className="w-3 h-3" strokeWidth={3} />
-            </button>
-
-            <div className="min-w-0 flex-1">
-                <p className={`text-sm font-medium leading-snug ${
-                    done ? 'text-ink-subtle line-through' : 'text-ink'
-                }`}>
-                    {task.name}
-                </p>
-                <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                    {task.doneForPeriod ? (
-                        <Badge className="bg-emerald-100 text-emerald-800">
-                            Hecho {task.frequency === 'daily' ? 'hoy' : 'en este periodo'}
-                        </Badge>
-                    ) : (
-                        <Badge className={palette.badge}>{labelTranslations[label]}</Badge>
-                    )}
-                    {task.frequency && task.frequency !== 'none' && (
-                        <Badge className={frequencyBadge}>{frequencyShort[task.frequency]}</Badge>
-                    )}
-                    {task.onHold?.active && (
-                        <Badge variant="alert">
-                            En espera{task.onHold.waitingOn && ` · ${task.onHold.waitingOn}`}
-                        </Badge>
-                    )}
-                    {task.isPrivate && (
-                        <Badge className="bg-slate-200 text-slate-700 ring-1 ring-inset ring-slate-400">
-                            Solo tú lo ves
-                        </Badge>
-                    )}
-                    {task.priority === 'urgent' && <Badge variant="alert">Urgente</Badge>}
-                    {showProject && (
-                        <span className="text-2xs text-ink-subtle truncate">
-                            {project ?? 'Operativo'}
-                        </span>
-                    )}
-                </div>
-            </div>
-        </li>
-    )
+const kindOf = (task: Task): Kind => {
+    if (task.project) return 'project'
+    if ((task.frequency ?? 'none') !== 'none') return 'maintenance'
+    return 'oneOff'
 }
 
-/** Histórico de pendientes puntuales ya cerrados.
- *
- *  Va plegado: no es trabajo por hacer, es memoria. Se abre para responder
- *  «¿esto ya lo hicimos?», y por eso lo primero que ofrece al abrirse es un
- *  buscador y no una lista interminable. */
-function PastTasks({ userId }: { userId?: string }) {
+const KIND_FILTERS: { key: Kind, label: string }[] = [
+    { key: 'maintenance', label: 'Mantenimiento' },
+    { key: 'project', label: 'Proyecto' },
+    { key: 'oneOff', label: 'Pendientes' }
+]
+
+/** Pendientes ya cerrados: lo que se acaba de terminar y lo que se terminó
+ *  hace tiempo. Va plegado, como una libreta de lo hecho: no estorba en el
+ *  día a día, pero está a un clic cuando hace falta revisar o buscar algo. */
+function FinishedTasks({ userId }: { userId?: string }) {
     const [open, setOpen] = useState(false)
     const [term, setTerm] = useState('')
     const query = useDebounced(term, 300)
 
-    // La búsqueda la resuelve el servidor sobre todo el histórico: filtrar solo
-    // la página cargada haría que un pendiente que sí existe pareciera no estar.
+    // La búsqueda la resuelve el servidor sobre todo el histórico: filtrar
+    // solo la página cargada haría que algo que sí existe pareciera no estar.
     const { data, isLoading, isFetching } = useQuery({
-        queryKey: ['pastTasks', userId, query],
+        queryKey: ['finishedTasks', userId, query],
         queryFn: () => getTaskPage({
             assignee: userId,
-            kind: 'oneOff',
             status: 'done',
-            limit: PAST_PAGE,
+            limit: FINISHED_PAGE,
             q: query || undefined
         }),
         enabled: open && !!userId,
@@ -149,12 +99,7 @@ function PastTasks({ userId }: { userId?: string }) {
                 className="w-full flex items-center justify-between px-3 h-11 text-left
                     hover:bg-surface-sunken transition-colors"
             >
-                <div>
-                    <h2 className="text-sm font-bold text-ink">Pendientes pasados</h2>
-                    <p className="text-2xs text-ink-subtle leading-none">
-                        Lo puntual ya cerrado
-                    </p>
-                </div>
+                <h2 className="text-sm font-bold text-ink">Finalizados</h2>
                 <span className="flex items-center gap-2">
                     {open && total > 0 && !query && (
                         <span className="text-2xs font-semibold text-ink-subtle tabular">{total}</span>
@@ -172,8 +117,8 @@ function PastTasks({ userId }: { userId?: string }) {
                         <input
                             value={term}
                             onChange={event => setTerm(event.target.value)}
-                            placeholder="Buscar en el histórico…"
-                            aria-label="Buscar en pendientes pasados"
+                            placeholder="Buscar en lo que ya cerraste…"
+                            aria-label="Buscar en finalizados"
                             className="flex-1 border-0 p-0 text-sm placeholder:text-ink-subtle
                                 focus:ring-0 bg-transparent"
                         />
@@ -183,8 +128,8 @@ function PastTasks({ userId }: { userId?: string }) {
                         <p className="px-3 py-6 text-center text-sm text-ink-muted">Cargando…</p>
                     ) : tasks.length === 0 ? (
                         <EmptyState
-                            title={query ? 'Nada con ese nombre' : 'Todavía no hay histórico'}
-                            hint={query ? undefined : 'Aquí quedará lo puntual que vayas cerrando.'}
+                            title={query ? 'Nada con ese nombre' : 'Todavía no hay nada cerrado'}
+                            hint={query ? undefined : 'Lo que vayas marcando como hecho quedará aquí.'}
                         />
                     ) : (
                         <>
@@ -196,7 +141,7 @@ function PastTasks({ userId }: { userId?: string }) {
                                             className="w-3.5 h-3.5 mt-1 shrink-0 text-stage-done"
                                             strokeWidth={3}
                                         />
-                                        <span className="text-sm text-ink-muted leading-snug">
+                                        <span className="text-sm text-ink-muted leading-snug truncate">
                                             {task.name}
                                         </span>
                                     </li>
@@ -220,7 +165,30 @@ function PastTasks({ userId }: { userId?: string }) {
 export default function MyWorkView() {
     const { data: currentUser } = useAuth()
     const queryClient = useQueryClient()
-    const today = useMemo(() => new Date(), [])
+    const now = useMemo(() => new Date(), [])
+    const timezone = currentUser?.timezone ?? DEFAULT_TIMEZONE
+    const todayKey = dayKey(now, timezone)
+
+    /** Lunes a viernes de la semana en curso. Se recalcula sola cada semana:
+     *  como se guarda una fecha real por tarea y no un "hoy"/"mañana"
+     *  relativo, en cuanto cambia la semana el lunes vuelve a estar vacío
+     *  sin que haga falta ningún reinicio manual. */
+    const weekDays: PlanDay[] = useMemo(() => {
+        const monday = startOfWeek(now, timezone)
+        return WEEKDAY_SHORT.map((label, index) => {
+            const date = addDays(monday, index)
+            const key = dayKey(date, timezone)
+            return { key, label, isToday: key === todayKey }
+        })
+    }, [now, timezone, todayKey])
+
+    const weekRangeLabel = useMemo(() => {
+        const first = getZonedParts(addDays(startOfWeek(now, timezone), 0), timezone)
+        const last = getZonedParts(addDays(startOfWeek(now, timezone), 4), timezone)
+        return first.month === last.month
+            ? `${first.day} – ${last.day} de ${MONTHS[last.month - 1]}`
+            : `${first.day} de ${MONTHS[first.month - 1]} – ${last.day} de ${MONTHS[last.month - 1]}`
+    }, [now, timezone])
 
     /** La encargada puede abrir esta misma pantalla para Nicole o Sofianne: es
      *  la vista de «qué le toca a una persona», y necesita responderla también
@@ -239,36 +207,35 @@ export default function MyWorkView() {
 
     const person = members?.find(member => member._id === personId)
     const isSelf = !viewing || viewing === currentUser?._id
+    const firstName = person?.name.split(' ')[0] ?? ''
 
-    const { data: day } = useQuery({
-        queryKey: ['day', today.toISOString().slice(0, 10), personId],
-        queryFn: () => getDaySchedule({ date: today, userId: isSelf ? undefined : personId }),
-        enabled: !!personId,
-        retry: false
-    })
-
-    const { data: tasks } = useQuery({
+    // Sin fechas ni horas: lo abierto es lo abierto, esté o no planificado
+    // para algún día. El servidor ya excluye lo cerrado por defecto.
+    const { data: tasks, isLoading } = useQuery({
         queryKey: ['myTasks', personId],
         queryFn: () => getMyTasks({ assignee: personId }),
         enabled: !!personId,
         retry: false
     })
 
+    const [kindFilter, setKindFilter] = useState<'all' | Kind>('all')
+
     const refresh = () => {
         queryClient.invalidateQueries({ queryKey: ['myTasks'] })
-        queryClient.invalidateQueries({ queryKey: ['pastTasks'] })
+        queryClient.invalidateQueries({ queryKey: ['finishedTasks'] })
         queryClient.invalidateQueries({ queryKey: ['day'] })
         queryClient.invalidateQueries({ queryKey: ['week'] })
         queryClient.invalidateQueries({ queryKey: ['unscheduled'] })
+        queryClient.invalidateQueries({ queryKey: ['teamBoard'] })
     }
 
-    const { mutate: complete, isPending: completing } = useMutation({
+    const { mutate: setStatus, isPending: changingStatus } = useMutation({
         mutationFn: updateWorkTaskStatus,
         onError: (error: Error) => toast.error(error.message),
         onSuccess: result => {
             if (result?.awaitingApproval) {
                 toast.info('Enviada a validación: tiene aprobadora asignada')
-            } else {
+            } else if (result?.status === 'done' || result?.occurrenceCompleted) {
                 toast.success('Lista')
             }
             refresh()
@@ -287,32 +254,54 @@ export default function MyWorkView() {
         onSuccess: () => { toast.success('Pendiente eliminado'); refresh() }
     })
 
-    // El filtro por responsable lo hace la consulta; aquí solo se reparte.
     const mine = useMemo(() => tasks ?? [], [tasks])
 
-    /** Tres naturalezas de trabajo, que se piensan y se despachan distinto:
-     *   - mantenimiento: vuelve solo, se cierra en el día;
-     *   - pendientes: ocurren una vez y desaparecen de la lista al cerrarlos;
-     *   - proyecto: arrastran seguimiento, validación y entregables.
-     *  No hace falta un campo nuevo: la cadencia y el proyecto ya lo dicen. */
-    const maintenance = mine.filter(task => !task.project && task.frequency !== 'none')
-    const oneOff = mine.filter(task => !task.project && (task.frequency ?? 'none') === 'none')
-    const projectWork = mine.filter(task => task.project)
+    // `plannedDate` se guarda como fecha simple ("YYYY-MM-DD"), igual que
+    // `dueDate`: se compara tomando esos mismos diez caracteres, sin volver a
+    // interpretarla por zona horaria. Reinterpretarla movería la fecha un día
+    // según a qué hora del día se mire, y "el martes" dejaría de ser el martes.
+    const weekKeys = useMemo(() => new Set(weekDays.map(day => day.key)), [weekDays])
+    const dayOf = (task: Task) => task.plannedDate?.slice(0, 10) ?? null
+    const isPlannedThisWeek = useMemo(
+        () => (task: Task) => {
+            const key = dayOf(task)
+            return !!key && weekKeys.has(key)
+        },
+        [weekKeys]
+    )
 
-    const timezone = day?.timezone ?? 'America/Lima'
-    const parts = getZonedParts(today, timezone)
+    const tasksByDay = useMemo(() => {
+        const map = new Map<string, Task[]>(weekDays.map(day => [day.key, []]))
+        for (const task of mine) {
+            const key = dayOf(task)
+            if (key && map.has(key)) map.get(key)!.push(task)
+        }
+        return map
+    }, [mine, weekDays])
+
+    const plannedCount = useMemo(() => mine.filter(isPlannedThisWeek).length, [mine, isPlannedThisWeek])
+    const backlog = useMemo(() => mine.filter(task => !isPlannedThisWeek(task)), [mine, isPlannedThisWeek])
+
+    const kindsPresent = useMemo(() => new Set(backlog.map(kindOf)), [backlog])
+    const visibleBacklog = kindFilter === 'all' ? backlog : backlog.filter(task => kindOf(task) === kindFilter)
+
+    const overdueCount = useMemo(() => mine.filter(task => {
+        if (getTaskLabel(task) === 'done' || task.doneForPeriod) return false
+        return !!task.dueDate && task.dueDate.slice(0, 10) < todayKey
+    }).length, [mine, todayKey])
+
+    const parts = getZonedParts(now, timezone)
     const weekdayIndex = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12)).getUTCDay()
 
-    const firstName = person?.name.split(' ')[0] ?? ''
-    const blocked = mine.filter(task => task.onHold?.active)
-    const waitingValidation = mine.filter(task => getTaskLabel(task) === 'toValidate')
-
     const rowProps = (task: Task) => ({
-        busy: completing,
+        weekDays,
+        todayKey,
+        busy: changingStatus,
         canEdit: canEditTask(task, currentUser),
         canHide: canHideTask(task, currentUser),
-        onSetStatus: (taskId: string, status: 'pending' | 'inProgress' | 'done') =>
-            complete({ taskId, status }),
+        onSetStatus: (taskId: string, status: Task['status']) => setStatus({ taskId, status }),
+        onSetDay: (taskId: string, dayKey: string | null) =>
+            patchTask({ taskId, formData: { plannedDate: dayKey } }),
         onPatch: (taskId: string, formData: Record<string, unknown>) =>
             patchTask({ taskId, formData: formData as never }),
         onDelete: (taskId: string) => removeTask(taskId)
@@ -323,11 +312,11 @@ export default function MyWorkView() {
             <PageHeader
                 title={isSelf
                     ? `Hola, ${currentUser?.name.split(' ')[0] ?? ''}`
-                    : `Trabajo de ${person?.name.split(' ')[0] ?? ''}`}
+                    : `Trabajo de ${firstName}`}
                 subtitle={`${WEEKDAYS[weekdayIndex]} ${parts.day} de ${MONTHS[parts.month - 1]}`}
                 actions={
                     <Link to="/semana">
-                        <Button variant="primary" size="md">Ir al calendario</Button>
+                        <Button variant="secondary" size="md">Ir al calendario</Button>
                     </Link>
                 }
             />
@@ -344,260 +333,138 @@ export default function MyWorkView() {
                 </div>
             )}
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-                <StatTile
-                    label="Programado hoy"
-                    value={formatDuration(day?.scheduledMinutes ?? 0)}
-                    hint="en bloques de trabajo"
-                />
-                <StatTile
-                    label="Entregables hoy"
-                    value={String(day?.dueToday.length ?? 0)}
-                    hint="con fecha límite hoy"
-                />
-                <StatTile
-                    label="Vencidos"
-                    value={String(day?.overdue.length ?? 0)}
-                    tone={(day?.overdue.length ?? 0) > 0 ? ALERT_COLOR : undefined}
-                    hint="fecha límite pasada"
-                />
-                <StatTile
-                    label="En espera"
-                    value={String(blocked.length)}
-                    tone={blocked.length > 0 ? ALERT_COLOR : undefined}
-                    hint="dependen de alguien más"
-                />
-            </div>
+            {overdueCount > 0 && (
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-red-700 mb-3">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0" />
+                    {overdueCount === 1 ? '1 pendiente vencido' : `${overdueCount} pendientes vencidos`}
+                </p>
+            )}
 
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-5">
-                {/* Columna izquierda: el día */}
-                <section className="space-y-5">
-                    <div className="card overflow-hidden">
-                        <div className="flex items-center justify-between px-3 h-11 border-b border-line">
-                            <h2 className="text-sm font-bold text-ink">
-                                {isSelf ? 'Mi día' : `El día de ${firstName}`}
-                            </h2>
-                            <Link to="/semana" className="text-xs font-semibold text-brand-600 hover:underline">
-                                Ver calendario
-                            </Link>
-                        </div>
-
-                        {(day?.blocks.length ?? 0) === 0 ? (
-                            <EmptyState
-                                title="Nada programado hoy"
-                                hint={isSelf
-                                    ? 'Arrastra pendientes al calendario para saber cuándo harás cada cosa.'
-                                    : `${firstName} todavía no ha reservado horas para hoy.`}
-                            />
-                        ) : (
-                            <ul className="divide-y divide-line">
-                                {day!.blocks.map(block => {
-                                    const task = typeof block.task === 'string' ? null : block.task
-                                    const accent = !task?.status
-                                        ? '#94a3b8'
-                                        : task.onHold?.active
-                                            ? ALERT_COLOR
-                                            : labelPalette[getTaskLabel(task as never)].solid
-                                    return (
-                                        <li key={block._id} className="flex items-center gap-3 px-3 py-2">
-                                            <span className="w-1 h-8 rounded-full shrink-0"
-                                                style={{ backgroundColor: accent }} />
-                                            <span className="text-xs font-semibold text-ink-muted tabular w-[86px] shrink-0">
-                                                {formatTime(new Date(block.start), timezone)}–
-                                                {formatTime(new Date(block.end), timezone)}
-                                            </span>
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block text-sm font-medium text-ink truncate">
-                                                    {task?.name ?? 'Tarea'}
-                                                </span>
-                                                <span className="block text-2xs text-ink-subtle">
-                                                    {formatDuration(durationMinutes(block.start, block.end))}
-                                                    {task?.status && ` · ${labelTranslations[getTaskLabel(task as never)]}`}
-                                                </span>
-                                            </span>
-                                        </li>
-                                    )
-                                })}
-                            </ul>
+            {/* Mi semana: lunes a viernes, sin hora. Tocar la estrella de un
+                pendiente de la lista de abajo lo trae a uno de estos días; la
+                semana se renueva sola cuando empieza la siguiente. */}
+            <section className="mb-5">
+                <div className="flex items-baseline justify-between mb-2">
+                    <h2 className="text-sm font-bold text-ink">
+                        Mi semana
+                        {plannedCount > 0 && (
+                            <span className="ml-1.5 text-ink-subtle tabular font-semibold">{plannedCount}</span>
                         )}
-                    </div>
+                    </h2>
+                    <p className="text-2xs text-ink-subtle capitalize">{weekRangeLabel}</p>
+                </div>
 
-                    {/* Pendientes: ocurren una vez y se acaban. Es donde va a
-                        parar casi todo lo que surge en el día. */}
-                    <div className="card overflow-hidden">
-                        <div className="flex items-center justify-between px-3 h-11 border-b border-line">
-                            <div>
-                                <h2 className="text-sm font-bold text-ink">
-                                    Pendientes
-                                    {oneOff.length > 0 && (
-                                        <span className="ml-1.5 text-ink-subtle tabular font-semibold">
-                                            {oneOff.length}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    {weekDays.map(day => {
+                        const dayTasks = tasksByDay.get(day.key) ?? []
+                        return (
+                            <div key={day.key} className={`card overflow-hidden flex flex-col ${
+                                day.isToday ? 'ring-1 ring-brand-300' : ''
+                            }`}>
+                                <div className={`flex items-center justify-between px-3 h-9 border-b border-line
+                                    shrink-0 ${day.isToday ? 'bg-brand-50' : 'bg-surface-sunken'}`}>
+                                    <span className={`text-xs font-bold ${
+                                        day.isToday ? 'text-brand-700' : 'text-ink-muted'
+                                    }`}>
+                                        {day.label}
+                                    </span>
+                                    {dayTasks.length > 0 && (
+                                        <span className="text-2xs font-semibold text-ink-subtle tabular">
+                                            {dayTasks.length}
                                         </span>
                                     )}
-                                </h2>
-                                <p className="text-2xs text-ink-subtle leading-none">
-                                    De una sola vez, sin cadencia ni proyecto
-                                </p>
+                                </div>
+
+                                {dayTasks.length === 0 ? (
+                                    <p className="px-3 py-4 text-2xs text-ink-subtle text-center flex-1">
+                                        Nada
+                                    </p>
+                                ) : (
+                                    <ul className="divide-y divide-line">
+                                        {dayTasks.map(task => (
+                                            <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
+                                        ))}
+                                    </ul>
+                                )}
                             </div>
-                            <Link to="/semana" className="text-xs font-semibold text-brand-600 hover:underline">
-                                Programar
-                            </Link>
-                        </div>
+                        )
+                    })}
+                </div>
+            </section>
 
-                        <div className="px-2 py-2 border-b border-line">
-                            <QuickCreateTask
-                                label="Nuevo pendiente"
-                                showFrequency={false}
-                                defaults={{ frequency: 'none', assignee: personId }}
-                            />
-                        </div>
-
-                        {oneOff.length === 0 ? (
-                            <EmptyState
-                                title="Sin pendientes sueltos"
-                                hint={isSelf
-                                    ? 'Lo que surja y no se repita, anótalo aquí.'
-                                    : `Lo que le surja a ${firstName} y no se repita irá aquí.`}
-                            />
-                        ) : (
-                            <ul className="divide-y divide-line max-h-96 overflow-y-auto">
-                                {oneOff.map(task => (
-                                    <WorkTaskRow
-                                        key={task._id}
-                                        task={task}
-                                        showFrequency={false}
-                                        showDueDate
-                                        {...rowProps(task)}
-                                    />
-                                ))}
-                            </ul>
-                        )}
+            <div className="max-w-2xl space-y-5">
+                {/* Todos mis pendientes: una sola lista, sin separar por tipo
+                    salvo que haga falta acotarla. De aquí se jala hacia un día
+                    de "Mi semana" con la estrella de cada fila. */}
+                <div className="card overflow-hidden">
+                    <div className="flex items-center justify-between px-3 h-11 border-b border-line">
+                        <h2 className="text-sm font-bold text-ink">
+                            Todos mis pendientes
+                            {backlog.length > 0 && (
+                                <span className="ml-1.5 text-ink-subtle tabular font-semibold">
+                                    {backlog.length}
+                                </span>
+                            )}
+                        </h2>
                     </div>
 
-                    <PastTasks userId={personId} />
-                </section>
+                    <div className="px-2 py-2 border-b border-line">
+                        <QuickCreateTask
+                            label="Nuevo pendiente"
+                            showFrequency={false}
+                            defaults={{ assignee: personId, frequency: 'none' }}
+                        />
+                    </div>
 
-                {/* Columna derecha: seguimiento */}
-                <section className="space-y-5">
-                    {(day?.overdue.length ?? 0) > 0 && (
-                        <div className="card overflow-hidden border-red-200">
-                            <div className="px-3 h-11 flex items-center border-b border-red-200 bg-red-50">
-                                <h2 className="text-sm font-bold text-red-800">
-                                    Vencidos ({day!.overdue.length})
-                                </h2>
-                            </div>
-                            <ul className="divide-y divide-line">
-                                {day!.overdue.map(task => (
-                                    <TaskRow
-                                        key={task._id}
-                                        task={task}
-                                        busy={completing}
-                                        onComplete={taskId => complete({ taskId, status: 'done' })}
-                                    />
-                                ))}
-                            </ul>
+                    {kindsPresent.size > 1 && (
+                        <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-line">
+                            <button
+                                type="button"
+                                onClick={() => setKindFilter('all')}
+                                aria-pressed={kindFilter === 'all'}
+                                className={`h-7 px-2.5 rounded text-xs font-semibold transition-colors ${
+                                    kindFilter === 'all'
+                                        ? 'bg-brand-50 text-brand-700'
+                                        : 'text-ink-muted hover:bg-slate-100'
+                                }`}
+                            >
+                                Todo
+                            </button>
+                            {KIND_FILTERS.filter(item => kindsPresent.has(item.key)).map(item => (
+                                <button
+                                    key={item.key}
+                                    type="button"
+                                    onClick={() => setKindFilter(item.key)}
+                                    aria-pressed={kindFilter === item.key}
+                                    className={`h-7 px-2.5 rounded text-xs font-semibold transition-colors ${
+                                        kindFilter === item.key
+                                            ? 'bg-brand-50 text-brand-700'
+                                            : 'text-ink-muted hover:bg-slate-100'
+                                    }`}
+                                >
+                                    {item.label}
+                                </button>
+                            ))}
                         </div>
                     )}
 
-                    {/* Mantenimiento: rápido, repetitivo, se termina en el día */}
-                    <div className="card overflow-hidden">
-                        <div className="flex items-center justify-between px-3 h-11 border-b border-line">
-                            <div>
-                                <h2 className="text-sm font-bold text-ink">
-                                    Mantenimiento
-                                    {maintenance.length > 0 && (
-                                        <span className="ml-1.5 text-ink-subtle tabular font-semibold">
-                                            {maintenance.length}
-                                        </span>
-                                    )}
-                                </h2>
-                                <p className="text-2xs text-ink-subtle leading-none">
-                                    Operativo que se repite
-                                </p>
-                            </div>
-                            <Link to="/mantenimiento" className="text-xs font-semibold text-brand-600 hover:underline">
-                                Ver todo
-                            </Link>
-                        </div>
-
-                        {maintenance.length === 0 ? (
-                            <EmptyState
-                                title="Sin mantenimiento abierto"
-                                hint="Lo que se repite cada día o cada semana vive en Mantenimiento."
-                            />
-                        ) : (
-                            <ul className="divide-y divide-line max-h-80 overflow-y-auto">
-                                {maintenance.map(task => (
-                                    <WorkTaskRow key={task._id} task={task} {...rowProps(task)} />
-                                ))}
-                            </ul>
-                        )}
-                    </div>
-
-                    <div className="card overflow-hidden">
-                        <div className="flex items-center justify-between px-3 h-11 border-b border-line">
-                            <div>
-                                <h2 className="text-sm font-bold text-ink">Trabajo de proyecto</h2>
-                                <p className="text-2xs text-ink-subtle leading-none">
-                                    Con seguimiento y validación
-                                </p>
-                            </div>
-                            <Link to="/proyectos" className="text-xs font-semibold text-brand-600 hover:underline">
-                                Ver proyectos
-                            </Link>
-                        </div>
-
-                        {projectWork.length === 0 ? (
-                            <EmptyState
-                                title="Sin tareas de proyecto"
-                                hint="Las tareas que formen parte de un proyecto aparecerán aquí."
-                            />
-                        ) : (
-                            <ul className="divide-y divide-line max-h-96 overflow-y-auto">
-                                {projectWork.map(task => (
-                                    <TaskRow
-                                        key={task._id}
-                                        task={task}
-                                        busy={completing}
-                                        onComplete={taskId => complete({ taskId, status: 'done' })}
-                                    />
-                                ))}
-                            </ul>
-                        )}
-                    </div>
-
-                    {waitingValidation.length > 0 && (
-                        <div className="card overflow-hidden">
-                            <div className="px-3 h-11 flex items-center border-b border-line">
-                                <h2 className="text-sm font-bold text-ink">
-                                    Esperando aprobación ({waitingValidation.length})
-                                </h2>
-                            </div>
-                            <ul className="divide-y divide-line">
-                                {waitingValidation.map(task => {
-                                    const approver = task.review?.approver
-                                    const approverName = approver && typeof approver !== 'string'
-                                        ? approver.name
-                                        : null
-                                    return (
-                                        <li key={task._id} className="flex items-center gap-2.5 px-3 py-2">
-                                            <span className="w-1 h-8 rounded-full bg-stage-validate shrink-0" />
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block text-sm font-medium text-ink truncate">
-                                                    {task.name}
-                                                </span>
-                                                <span className="block text-2xs text-ink-subtle">
-                                                    {approverName ? `Aprueba ${approverName}` : 'Sin aprobadora designada'}
-                                                </span>
-                                            </span>
-                                            {approverName && <Avatar name={approverName} size="sm" />}
-                                        </li>
-                                    )
-                                })}
-                            </ul>
-                        </div>
+                    {isLoading ? (
+                        <p className="px-3 py-6 text-center text-sm text-ink-muted">Cargando…</p>
+                    ) : visibleBacklog.length === 0 ? (
+                        <EmptyState
+                            title={backlog.length === 0 ? 'Sin pendientes abiertos' : 'Nada con ese filtro'}
+                            hint={backlog.length === 0 ? 'Todo lo que tienes está en tu semana o ya está cerrado.' : undefined}
+                        />
+                    ) : (
+                        <ul className="divide-y divide-line">
+                            {visibleBacklog.map(task => (
+                                <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
+                            ))}
+                        </ul>
                     )}
-                </section>
+                </div>
+
+                <FinishedTasks userId={personId} />
             </div>
         </>
     )

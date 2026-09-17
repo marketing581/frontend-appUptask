@@ -103,7 +103,13 @@ export async function updateWorkTaskStatus({ taskId, status, note }: {
 }) {
     try {
         const { data } = await api.post(`/tasks/${taskId}/status`, { status, note })
-        return data as { task: Task, status: TaskStatus, awaitingApproval: boolean }
+        return data as {
+            task: Task, status: TaskStatus, awaitingApproval: boolean
+            /** Una tarea recurrente vuelve a Pendiente al cerrar la ocurrencia
+             *  de hoy: esto es lo que dice que sí se cerró, aunque el estado
+             *  final no sea "done". */
+            occurrenceCompleted: boolean
+        }
     } catch (error) {
         extractError(error, 'No se pudo cambiar el estado')
     }

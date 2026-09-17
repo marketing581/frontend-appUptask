@@ -39,6 +39,9 @@ type Defaults = {
     frequency?: TaskFrequency
     project?: string
     brand?: string
+    /** Crear dentro de "Hoy" ya lo deja elegido para hoy, sin que haga falta
+     *  un segundo gesto para jalarlo. */
+    plannedDate?: string
 }
 
 type Props = {
@@ -145,6 +148,7 @@ export default function QuickCreateTask({
         if (dueDate) payload.dueDate = dueDate
         if (estimate) payload.estimatedMinutes = Number(estimate)
         if (defaults?.project) payload.project = defaults.project
+        if (defaults?.plannedDate) payload.plannedDate = defaults.plannedDate
         return payload
     }
 
