@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
+import { getBrands } from '@/api/BrandAPI'
 import { getScheduleMembers } from '@/api/ScheduleAPI'
 import {
     deleteWorkTask, getMyTasks, getTaskPage, requestWorkTaskReview,
@@ -288,6 +289,8 @@ export default function MyWorkView() {
         retry: false
     })
 
+    const { data: brands } = useQuery({ queryKey: ['brands'], queryFn: getBrands })
+
     const [kindFilter, setKindFilter] = useState<'all' | Kind>('all')
 
     /** A dónde se soltaría el pendiente que se está arrastrando: la clave de
@@ -406,6 +409,7 @@ export default function MyWorkView() {
     }
 
     const rowProps = (task: Task) => ({
+        brands: brands ?? [],
         weekDays,
         todayKey,
         busy: changingStatus || requestingReview || resolvingReview,
