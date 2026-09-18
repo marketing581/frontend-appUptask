@@ -73,12 +73,16 @@ const projectRefSchema = z.union([
 ]).nullable().optional()
 const brandRefSchema = z.union([brandSchema, z.string()]).nullable().optional()
 
+export const taskColorTagSchema = z.enum(['orange', 'green']).nullable().default(null)
+export type TaskColorTag = z.infer<typeof taskColorTagSchema>
+
 export const taskSchema = z.object({
     _id: z.string(),
     name: z.string(),
     description: z.string().default(''),
     project: projectRefSchema,
     brand: brandRefSchema,
+    colorTag: taskColorTagSchema,
     status: taskStatusSchema,
     onHold: z.object({
         active: z.boolean(),

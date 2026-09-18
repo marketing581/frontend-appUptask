@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { EyeIcon, EyeSlashIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline'
-import { Brand, Task } from '@/types'
+import { Task } from '@/types'
 import { ALERT_COLOR, TaskLabel, frequencyShort, getTaskLabel } from '@/utils/taskLabels'
 import { Badge } from '@/components/ui'
-import BrandDot from './BrandDot'
+import ColorTagDot from './ColorTagDot'
 import TaskStatusControl from './TaskStatusControl'
 import PlanDayPicker, { PlanDay } from './PlanDayPicker'
 
@@ -13,23 +13,16 @@ import PlanDayPicker, { PlanDay } from './PlanDayPicker'
  *  clic; el resto —renombrar, ocultar, borrar— sigue ahí pero no compite por
  *  atención. */
 
-/** Tiñe toda la fila con la marca, no solo el punto: de un vistazo, sin
+/** Tiñe toda la fila con el color, no solo el punto: de un vistazo, sin
  *  tener que leer cada etiqueta. Un tono bajo para no pelear con el texto
  *  ni con el resto de etiquetas de color. */
-const brandWash = (hex: string) => {
-    const value = hex.replace('#', '')
-    const full = value.length === 3 ? value.split('').map(c => c + c).join('') : value
-    const num = parseInt(full, 16)
-    const r = (num >> 16) & 255
-    const g = (num >> 8) & 255
-    const b = num & 255
-    return `rgba(${r}, ${g}, ${b}, 0.1)`
+const COLOR_WASH: Record<'orange' | 'green', string> = {
+    orange: 'rgba(230, 79, 27, 0.1)',
+    green: 'rgba(65, 131, 0, 0.1)'
 }
 
 type Props = {
     task: Task
-    /** Marcas del equipo, para el punto de color junto al nombre. */
-    brands: Brand[]
     /** Los cinco días de la semana en curso (lunes a viernes), para el
      *  selector de planificación y para saber si el vencimiento es hoy. */
     weekDays: PlanDay[]
@@ -58,7 +51,7 @@ type Props = {
 }
 
 export default function SimpleTaskRow({
-    task, brands, weekDays, todayKey, canEdit, canHide, busy, dayControl = 'assign',
+    task, weekDays, todayKey, canEdit, canHide, busy, dayControl = 'assign',
     onSetLabel, onSetDay, onPatch, onDelete
 }: Props) {
     const label = getTaskLabel(task)
@@ -93,8 +86,7 @@ export default function SimpleTaskRow({
     const dueToday = !done && dueKey === todayKey
 
     const plannedKey = task.plannedDate ? task.plannedDate.slice(0, 10) : null
-    const brandId = task.brand ? (typeof task.brand === 'string' ? task.brand : task.brand._id) : null
-    const brandColor = brands.find(brand => brand._id === brandId)?.color ?? null
+    const colorTag = task.colorTag ?? null
 
     return (
         <li
@@ -103,18 +95,17 @@ export default function SimpleTaskRow({
                 event.dataTransfer.setData('application/x-uptask-plan-task', task._id)
                 event.dataTransfer.effectAllowed = 'move'
             }}
-            style={brandColor ? { backgroundColor: brandWash(brandColor) } : undefined}
+            style={colorTag ? { backgroundColor: COLOR_WASH[colorTag] } : undefined}
             className={`group flex items-start gap-2 px-3 py-2 transition-colors ${
-                brandColor ? '' : 'hover:bg-surface-sunken'
+                colorTag ? '' : 'hover:bg-surface-sunken'
             } ${canEdit ? 'cursor-grab active:cursor-grabbing' : ''}`}
         >
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                    <BrandDot
-                        brands={brands}
-                        brandId={brandId}
+                    <ColorTagDot
+                        value={colorTag}
                         disabled={!canEdit}
-                        onSelect={next => onPatch(task._id, { brand: next })}
+                        onChange={next => onPatch(task._id, { colorTag: next })}
                     />
                     {canEdit ? (
                         <input

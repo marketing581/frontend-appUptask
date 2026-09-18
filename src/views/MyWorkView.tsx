@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
-import { getBrands } from '@/api/BrandAPI'
 import { getScheduleMembers } from '@/api/ScheduleAPI'
 import {
     deleteWorkTask, getMyTasks, getTaskPage, requestWorkTaskReview,
@@ -289,8 +288,6 @@ export default function MyWorkView() {
         retry: false
     })
 
-    const { data: brands } = useQuery({ queryKey: ['brands'], queryFn: getBrands })
-
     const [kindFilter, setKindFilter] = useState<'all' | Kind>('all')
 
     /** A dónde se soltaría el pendiente que se está arrastrando: la clave de
@@ -341,9 +338,26 @@ export default function MyWorkView() {
         onSuccess: () => { toast.success('Lista'); refresh() }
     })
 
+    // Arrastrar a un día debe sentirse instantáneo: la tarjeta se mueve de
+    // columna al soltar, sin esperar la vuelta del servidor. Si la petición
+    // falla, se deshace sola con el dato que había antes.
     const { mutate: patchTask } = useMutation({
         mutationFn: updateWorkTask,
-        onError: (error: Error) => toast.error(error.message),
+        onMutate: async ({ taskId, formData }) => {
+            const queryKey = ['myTasks', personId]
+            await queryClient.cancelQueries({ queryKey })
+            const previous = queryClient.getQueryData<Task[]>(queryKey)
+            if (previous) {
+                queryClient.setQueryData<Task[]>(queryKey, previous.map(task =>
+                    task._id === taskId ? { ...task, ...formData } as Task : task
+                ))
+            }
+            return { previous, queryKey }
+        },
+        onError: (error: Error, _variables, context) => {
+            toast.error(error.message)
+            if (context?.previous) queryClient.setQueryData(context.queryKey, context.previous)
+        },
         onSuccess: () => refresh()
     })
 
@@ -409,7 +423,6 @@ export default function MyWorkView() {
     }
 
     const rowProps = (task: Task) => ({
-        brands: brands ?? [],
         weekDays,
         todayKey,
         busy: changingStatus || requestingReview || resolvingReview,
