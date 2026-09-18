@@ -68,12 +68,16 @@ export type TaskPriority = z.infer<typeof taskPrioritySchema>
 
 const userRefSchema = z.union([userSchema, z.string()]).nullable().optional()
 const projectRefSchema = z.union([
-    z.object({ _id: z.string(), projectName: z.string() }),
+    z.object({
+        _id: z.string(),
+        projectName: z.string(),
+        team: z.array(z.object({ _id: z.string(), name: z.string() })).optional()
+    }),
     z.string()
 ]).nullable().optional()
 const brandRefSchema = z.union([brandSchema, z.string()]).nullable().optional()
 
-export const taskColorTagSchema = z.enum(['orange', 'green']).nullable().default(null)
+export const taskColorTagSchema = z.enum(['orange', 'green', 'fuchsia', 'celeste']).nullable().default(null)
 export type TaskColorTag = z.infer<typeof taskColorTagSchema>
 
 export const taskSchema = z.object({

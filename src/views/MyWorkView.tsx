@@ -2,7 +2,7 @@ import { ComponentProps, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { getScheduleMembers } from '@/api/ScheduleAPI'
 import {
     deleteWorkTask, getMyTasks, getTaskPage, requestWorkTaskReview,
@@ -14,6 +14,7 @@ import {
     DEFAULT_TIMEZONE, addDays, dayKey, getZonedParts, startOfWeek
 } from '@/utils/datetime'
 import { TaskLabel, getTaskLabel } from '@/utils/taskLabels'
+import { TaskKind, kindOf } from '@/utils/taskKind'
 import { Button, EmptyState, PageHeader } from '@/components/ui'
 import PersonSwitcher from '@/components/team/PersonSwitcher'
 import QuickCreateTask from '@/components/tasks/QuickCreateTask'
@@ -52,17 +53,7 @@ function useDebounced(value: string, delay: number) {
     return settled
 }
 
-/** Naturaleza del trabajo, solo para poder acotar la lista cuando crece: por
- *  defecto se ve todo junto, como una sola lista de pendientes. */
-type Kind = 'maintenance' | 'project' | 'oneOff'
-
-const kindOf = (task: Task): Kind => {
-    if (task.project) return 'project'
-    if ((task.frequency ?? 'none') !== 'none') return 'maintenance'
-    return 'oneOff'
-}
-
-const KIND_FILTERS: { key: Kind, label: string }[] = [
+const KIND_FILTERS: { key: TaskKind, label: string }[] = [
     { key: 'maintenance', label: 'Mantenimiento' },
     { key: 'project', label: 'Proyecto' },
     { key: 'oneOff', label: 'Pendientes' }
@@ -105,12 +96,20 @@ function bucketOf(task: Task, now: Date, timezone: string): FinishedBucket {
     return 'older'
 }
 
+/** "hace 3 días": una aproximación en días, no un cronómetro exacto — de
+ *  sobra para saber si algo lleva esperando mucho o poco. */
+function formatElapsed(requestedAt: string | null | undefined, now: Date): string {
+    if (!requestedAt) return ''
+    const days = Math.floor((now.getTime() - new Date(requestedAt).getTime()) / 86400000)
+    if (days <= 0) return 'hoy'
+    return days === 1 ? 'hace 1 día' : `hace ${days} días`
+}
+
 type RowProps = Omit<ComponentProps<typeof SimpleTaskRow>, 'task'>
 
 function FinishedTasks({ userId, now, timezone, rowProps }: {
     userId?: string, now: Date, timezone: string, rowProps: (task: Task) => RowProps
 }) {
-    const [open, setOpen] = useState(false)
     const [term, setTerm] = useState('')
     const query = useDebounced(term, 300)
 
@@ -124,7 +123,7 @@ function FinishedTasks({ userId, now, timezone, rowProps }: {
             limit: FINISHED_PAGE,
             q: query || undefined
         }),
-        enabled: open && !!userId,
+        enabled: !!userId,
         placeholderData: previous => previous,
         retry: false
     })
@@ -150,27 +149,17 @@ function FinishedTasks({ userId, now, timezone, rowProps }: {
 
     return (
         <div className="card overflow-hidden">
-            <button
-                type="button"
-                onClick={() => setOpen(value => !value)}
-                aria-expanded={open}
-                className="w-full flex items-center justify-between px-3 h-11 text-left
-                    hover:bg-surface-sunken transition-colors"
-            >
-                <h2 className="text-sm font-bold text-ink">Finalizados</h2>
-                <span className="flex items-center gap-2">
-                    {open && total > 0 && !query && (
-                        <span className="text-2xs font-semibold text-ink-subtle tabular">{total}</span>
+            <div className="flex items-center justify-between px-3 h-11 border-b border-line">
+                <h2 className="text-sm font-bold text-ink">
+                    Finalizados
+                    {total > 0 && !query && (
+                        <span className="ml-1.5 text-ink-subtle tabular font-semibold">{total}</span>
                     )}
-                    <ChevronDownIcon
-                        className={`w-4 h-4 text-ink-subtle transition-transform ${open ? 'rotate-180' : ''}`}
-                    />
-                </span>
-            </button>
+                </h2>
+            </div>
 
-            {open && (
-                <div className="border-t border-line">
-                    <label className="flex items-center gap-2 px-3 py-2 border-b border-line">
+            <div>
+                <label className="flex items-center gap-2 px-3 py-2 border-b border-line">
                         <MagnifyingGlassIcon className="w-4 h-4 text-ink-subtle shrink-0" />
                         <input
                             value={term}
@@ -207,7 +196,7 @@ function FinishedTasks({ userId, now, timezone, rowProps }: {
                                                 <SimpleTaskRow
                                                     key={task._id}
                                                     task={task}
-                                                    dayControl="none"
+                                                    showDayOptions={false}
                                                     {...rowProps(task)}
                                                 />
                                             ))}
@@ -220,7 +209,7 @@ function FinishedTasks({ userId, now, timezone, rowProps }: {
                                         <SimpleTaskRow
                                             key={task._id}
                                             task={task}
-                                            dayControl="none"
+                                            showDayOptions={false}
                                             {...rowProps(task)}
                                         />
                                     ))}
@@ -236,8 +225,7 @@ function FinishedTasks({ userId, now, timezone, rowProps }: {
                             )}
                         </div>
                     )}
-                </div>
-            )}
+            </div>
         </div>
     )
 }
@@ -261,6 +249,13 @@ export default function MyWorkView() {
             return { key, label, isToday: key === todayKey }
         })
     }, [now, timezone, todayKey])
+
+    // En mobile, "Mi semana" se ve un día a la vez —los cinco días
+    // completos, apilados, ocupan demasiado alto—; en desktop el grid de
+    // cinco columnas los muestra todos y esta selección no se usa.
+    const [selectedDay, setSelectedDay] = useState(
+        () => weekDays.find(day => day.isToday)?.key ?? weekDays[0].key
+    )
 
     const weekRangeLabel = useMemo(() => {
         const first = getZonedParts(addDays(startOfWeek(now, timezone), 0), timezone)
@@ -298,7 +293,13 @@ export default function MyWorkView() {
         retry: false
     })
 
-    const [kindFilter, setKindFilter] = useState<'all' | Kind>('all')
+    const [kindFilter, setKindFilter] = useState<'all' | TaskKind>('all')
+
+    /** En mobile, Pendientes / Por validar / Finalizados son pestañas —los
+     *  tres bloques completos a la vez no caben sin comprimirlos ni generar
+     *  scroll horizontal—; en desktop las tres columnas se ven siempre y esta
+     *  pestaña no se usa. */
+    const [activeTab, setActiveTab] = useState<'pending' | 'review' | 'done'>('pending')
 
     /** A dónde se soltaría el pendiente que se está arrastrando: la clave de
      *  un día, o "backlog" para devolverlo a la lista general. Solo pinta el
@@ -345,7 +346,10 @@ export default function MyWorkView() {
     const { mutate: resolveReview, isPending: resolvingReview } = useMutation({
         mutationFn: resolveWorkTaskReview,
         onError: (error: Error) => toast.error(error.message),
-        onSuccess: () => { toast.success('Lista'); refresh() }
+        onSuccess: (_result, variables) => {
+            toast.success(variables.approved ? 'Lista' : 'Devuelta a en proceso')
+            refresh()
+        }
     })
 
     // Arrastrar a un día debe sentirse instantáneo: la tarjeta se mueve de
@@ -392,18 +396,30 @@ export default function MyWorkView() {
         },
         [weekKeys]
     )
+    // "Por validar" es un espacio permanente, no de esta semana: una tarea
+    // en revisión nunca vive en "Mi semana" ni en "Pendientes", esté o no
+    // planificada, para no verla dos veces.
+    const isAwaitingReview = (task: Task) => getTaskLabel(task) === 'toValidate'
 
     const tasksByDay = useMemo(() => {
         const map = new Map<string, Task[]>(weekDays.map(day => [day.key, []]))
         for (const task of mine) {
+            if (isAwaitingReview(task)) continue
             const key = dayOf(task)
             if (key && map.has(key)) map.get(key)!.push(task)
         }
         return map
     }, [mine, weekDays])
 
-    const plannedCount = useMemo(() => mine.filter(isPlannedThisWeek).length, [mine, isPlannedThisWeek])
-    const backlog = useMemo(() => mine.filter(task => !isPlannedThisWeek(task)), [mine, isPlannedThisWeek])
+    const plannedCount = useMemo(
+        () => mine.filter(task => !isAwaitingReview(task) && isPlannedThisWeek(task)).length,
+        [mine, isPlannedThisWeek]
+    )
+    const backlog = useMemo(
+        () => mine.filter(task => !isAwaitingReview(task) && !isPlannedThisWeek(task)),
+        [mine, isPlannedThisWeek]
+    )
+    const reviewTasks = useMemo(() => mine.filter(isAwaitingReview), [mine])
 
     const kindsPresent = useMemo(() => new Set(backlog.map(kindOf)), [backlog])
     const visibleBacklog = kindFilter === 'all' ? backlog : backlog.filter(task => kindOf(task) === kindFilter)
@@ -432,19 +448,159 @@ export default function MyWorkView() {
         }
     }
 
-    const rowProps = (task: Task) => ({
-        weekDays,
-        todayKey,
-        busy: changingStatus || requestingReview || resolvingReview,
-        canEdit: canEditTask(task, currentUser),
-        canHide: canHideTask(task, currentUser),
-        onSetLabel: (_taskId: string, label: TaskLabel) => setLabel(task, label),
-        onSetDay: (taskId: string, dayKey: string | null) =>
-            patchTask({ taskId, formData: { plannedDate: dayKey } }),
-        onPatch: (taskId: string, formData: Record<string, unknown>) =>
-            patchTask({ taskId, formData: formData as never }),
-        onDelete: (taskId: string) => removeTask(taskId)
+    const rowProps = (task: Task) => {
+        const approver = task.review?.approver && typeof task.review.approver !== 'string'
+            ? task.review.approver
+            : null
+        // Quien resuelve la revisión es la aprobadora asignada o la
+        // encargada, no necesariamente quien hizo la tarea: `canEdit` no
+        // sirve aquí porque casi siempre es cierto para la propia dueña.
+        const canResolveReview = currentUser?.role === 'manager' ||
+            (!!approver && approver._id === currentUser?._id)
+
+        return {
+            weekDays,
+            todayKey,
+            busy: changingStatus || requestingReview || resolvingReview,
+            canEdit: canEditTask(task, currentUser),
+            canHide: canHideTask(task, currentUser),
+            reviewInfo: {
+                approverName: approver?.name ?? null,
+                elapsed: formatElapsed(task.review?.requestedAt, now)
+            },
+            canResolveReview,
+            onApprove: (taskId: string) => resolveReview({ taskId, approved: true }),
+            onRequestChanges: (taskId: string, note: string) =>
+                resolveReview({ taskId, approved: false, note: note.trim() || undefined }),
+            onSetLabel: (_taskId: string, label: TaskLabel) => setLabel(task, label),
+            onSetDay: (taskId: string, dayKey: string | null) =>
+                patchTask({ taskId, formData: { plannedDate: dayKey } }),
+            onPatch: (taskId: string, formData: Record<string, unknown>) =>
+                patchTask({ taskId, formData: formData as never }),
+            onDelete: (taskId: string) => removeTask(taskId)
+        }
+    }
+
+    // Un conteo aparte, liviano, solo para el número de la pestaña —
+    // `FinishedTasks` ya trae su propio total, pero es interno a ese
+    // componente y la pestaña vive un nivel arriba.
+    const { data: doneCountData } = useQuery({
+        queryKey: ['finishedCount', personId],
+        queryFn: () => getTaskPage({ assignee: personId, status: 'done', limit: 1 }),
+        enabled: !!personId,
+        retry: false
     })
+    const doneCount = doneCountData?.total ?? 0
+
+    const TAB_ITEMS: { key: typeof activeTab, label: string, count: number }[] = [
+        { key: 'pending', label: 'Pendientes', count: backlog.length },
+        { key: 'review', label: 'Por validar', count: reviewTasks.length },
+        { key: 'done', label: 'Finalizados', count: doneCount }
+    ]
+
+    const pendingColumn = (
+        <div
+            onDragOver={event => { event.preventDefault(); setDragOverKey('backlog') }}
+            onDragLeave={() => setDragOverKey(current => current === 'backlog' ? null : current)}
+            onDrop={dropOnto(null)}
+            className={`card overflow-hidden transition-shadow ${
+                dragOverKey === 'backlog' ? 'ring-2 ring-brand-500 shadow-raised' : ''
+            }`}
+        >
+            <div className="flex items-center justify-between px-3 h-11 border-b border-line">
+                <h2 className="text-sm font-bold text-ink">
+                    Pendientes
+                    {backlog.length > 0 && (
+                        <span className="ml-1.5 text-ink-subtle tabular font-semibold">{backlog.length}</span>
+                    )}
+                </h2>
+            </div>
+
+            <div className="px-2 py-2 border-b border-line">
+                <QuickCreateTask
+                    label="Nuevo pendiente"
+                    showFrequency={false}
+                    defaults={{ assignee: personId, frequency: 'none' }}
+                />
+            </div>
+
+            {kindsPresent.size > 1 && (
+                <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-line">
+                    <button
+                        type="button"
+                        onClick={() => setKindFilter('all')}
+                        aria-pressed={kindFilter === 'all'}
+                        className={`h-7 px-2.5 rounded text-xs font-semibold transition-colors ${
+                            kindFilter === 'all'
+                                ? 'bg-brand-50 text-brand-700'
+                                : 'text-ink-muted hover:bg-slate-100'
+                        }`}
+                    >
+                        Todo
+                    </button>
+                    {KIND_FILTERS.filter(item => kindsPresent.has(item.key)).map(item => (
+                        <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => setKindFilter(item.key)}
+                            aria-pressed={kindFilter === item.key}
+                            className={`h-7 px-2.5 rounded text-xs font-semibold transition-colors ${
+                                kindFilter === item.key
+                                    ? 'bg-brand-50 text-brand-700'
+                                    : 'text-ink-muted hover:bg-slate-100'
+                            }`}
+                        >
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {isLoading ? (
+                <p className="px-3 py-6 text-center text-sm text-ink-muted">Cargando…</p>
+            ) : visibleBacklog.length === 0 ? (
+                <EmptyState
+                    title={backlog.length === 0 ? 'Sin pendientes abiertos' : 'Nada con ese filtro'}
+                    hint={backlog.length === 0 ? 'Todo lo que tienes está en tu semana o ya está cerrado.' : undefined}
+                />
+            ) : (
+                <ul className="divide-y divide-line">
+                    {visibleBacklog.map(task => (
+                        <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
+                    ))}
+                </ul>
+            )}
+        </div>
+    )
+
+    const reviewColumn = (
+        <div className="card overflow-hidden">
+            <div className="flex items-center justify-between px-3 h-11 border-b border-line">
+                <h2 className="text-sm font-bold text-ink">
+                    Por validar
+                    {reviewTasks.length > 0 && (
+                        <span className="ml-1.5 text-ink-subtle tabular font-semibold">{reviewTasks.length}</span>
+                    )}
+                </h2>
+            </div>
+            {reviewTasks.length === 0 ? (
+                <EmptyState
+                    title="Nada esperando validación"
+                    hint="Lo que se envíe a validar aparece aquí, sin importar la semana."
+                />
+            ) : (
+                <ul className="divide-y divide-line">
+                    {reviewTasks.map(task => (
+                        <SimpleTaskRow key={task._id} task={task} showDayOptions={false} {...rowProps(task)} />
+                    ))}
+                </ul>
+            )}
+        </div>
+    )
+
+    const doneColumn = (
+        <FinishedTasks userId={personId} now={now} timezone={timezone} rowProps={rowProps} />
+    )
 
     return (
         <>
@@ -494,7 +650,30 @@ export default function MyWorkView() {
                     <p className="text-2xs text-ink-subtle capitalize">{weekRangeLabel}</p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="lg:hidden mb-3 flex items-center gap-1 overflow-x-auto pb-0.5">
+                    {weekDays.map(day => {
+                        const count = tasksByDay.get(day.key)?.length ?? 0
+                        return (
+                            <button
+                                key={day.key}
+                                type="button"
+                                onClick={() => setSelectedDay(day.key)}
+                                aria-pressed={selectedDay === day.key}
+                                className={`h-8 px-3 rounded-full text-xs font-semibold shrink-0 transition-colors ${
+                                    selectedDay === day.key
+                                        ? 'bg-brand-600 text-white'
+                                        : day.isToday
+                                            ? 'bg-brand-50 text-brand-700'
+                                            : 'bg-slate-100 text-ink-muted'
+                                }`}
+                            >
+                                {day.label}{count > 0 && ` · ${count}`}
+                            </button>
+                        )
+                    })}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
                     {weekDays.map(day => {
                         const dayTasks = tasksByDay.get(day.key) ?? []
                         const isDropTarget = dragOverKey === day.key
@@ -504,9 +683,11 @@ export default function MyWorkView() {
                                 onDragOver={event => { event.preventDefault(); setDragOverKey(day.key) }}
                                 onDragLeave={() => setDragOverKey(current => current === day.key ? null : current)}
                                 onDrop={dropOnto(day.key)}
-                                className={`card overflow-hidden flex flex-col transition-shadow ${
-                                    day.isToday ? 'ring-1 ring-brand-300' : ''
-                                } ${isDropTarget ? 'ring-2 ring-brand-500 shadow-raised' : ''}`}
+                                className={`card overflow-hidden flex-col transition-shadow ${
+                                    selectedDay === day.key ? 'flex' : 'hidden lg:flex'
+                                } ${day.isToday ? 'ring-1 ring-brand-300' : ''} ${
+                                    isDropTarget ? 'ring-2 ring-brand-500 shadow-raised' : ''
+                                }`}
                             >
                                 <div className={`flex items-center justify-between px-3 h-9 border-b border-line
                                     shrink-0 ${day.isToday ? 'bg-brand-50' : 'bg-surface-sunken'}`}>
@@ -534,7 +715,6 @@ export default function MyWorkView() {
                                                     <SimpleTaskRow
                                                         key={task._id}
                                                         task={task}
-                                                        dayControl="remove"
                                                         {...rowProps(task)}
                                                     />
                                                 ))}
@@ -558,87 +738,39 @@ export default function MyWorkView() {
                 </div>
             </section>
 
-            <div className="max-w-2xl space-y-5">
-                {/* Todos mis pendientes: una sola lista, sin separar por tipo
-                    salvo que haga falta acotarla. De aquí se arrastra —o se
-                    elige por el selector de cada fila— hacia un día de "Mi
-                    semana"; arrastrar de vuelta aquí lo quita de la semana. */}
-                <div
-                    onDragOver={event => { event.preventDefault(); setDragOverKey('backlog') }}
-                    onDragLeave={() => setDragOverKey(current => current === 'backlog' ? null : current)}
-                    onDrop={dropOnto(null)}
-                    className={`card overflow-hidden transition-shadow ${
-                        dragOverKey === 'backlog' ? 'ring-2 ring-brand-500 shadow-raised' : ''
-                    }`}
-                >
-                    <div className="flex items-center justify-between px-3 h-11 border-b border-line">
-                        <h2 className="text-sm font-bold text-ink">
-                            Todos mis pendientes
-                            {backlog.length > 0 && (
-                                <span className="ml-1.5 text-ink-subtle tabular font-semibold">
-                                    {backlog.length}
-                                </span>
-                            )}
-                        </h2>
-                    </div>
+            {/* Pendientes / Por validar / Finalizados: en desktop, tres
+                columnas a la vista siempre, con más ancho para Pendientes;
+                en mobile no caben sin apretarlas ni generar scroll
+                horizontal, así que se ven de a una por pestaña. */}
+            <div
+                role="group"
+                aria-label="Sección"
+                className="lg:hidden mb-3 flex items-center gap-0.5 p-0.5 rounded-md bg-slate-100 w-fit"
+            >
+                {TAB_ITEMS.map(item => (
+                    <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setActiveTab(item.key)}
+                        aria-pressed={activeTab === item.key}
+                        className={`h-8 px-3 rounded text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                            activeTab === item.key
+                                ? 'bg-surface text-ink shadow-card'
+                                : 'text-ink-muted hover:text-ink'
+                        }`}
+                    >
+                        {item.label}
+                        {item.count > 0 && (
+                            <span className="text-ink-subtle tabular">{item.count}</span>
+                        )}
+                    </button>
+                ))}
+            </div>
 
-                    <div className="px-2 py-2 border-b border-line">
-                        <QuickCreateTask
-                            label="Nuevo pendiente"
-                            showFrequency={false}
-                            defaults={{ assignee: personId, frequency: 'none' }}
-                        />
-                    </div>
-
-                    {kindsPresent.size > 1 && (
-                        <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-line">
-                            <button
-                                type="button"
-                                onClick={() => setKindFilter('all')}
-                                aria-pressed={kindFilter === 'all'}
-                                className={`h-7 px-2.5 rounded text-xs font-semibold transition-colors ${
-                                    kindFilter === 'all'
-                                        ? 'bg-brand-50 text-brand-700'
-                                        : 'text-ink-muted hover:bg-slate-100'
-                                }`}
-                            >
-                                Todo
-                            </button>
-                            {KIND_FILTERS.filter(item => kindsPresent.has(item.key)).map(item => (
-                                <button
-                                    key={item.key}
-                                    type="button"
-                                    onClick={() => setKindFilter(item.key)}
-                                    aria-pressed={kindFilter === item.key}
-                                    className={`h-7 px-2.5 rounded text-xs font-semibold transition-colors ${
-                                        kindFilter === item.key
-                                            ? 'bg-brand-50 text-brand-700'
-                                            : 'text-ink-muted hover:bg-slate-100'
-                                    }`}
-                                >
-                                    {item.label}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    {isLoading ? (
-                        <p className="px-3 py-6 text-center text-sm text-ink-muted">Cargando…</p>
-                    ) : visibleBacklog.length === 0 ? (
-                        <EmptyState
-                            title={backlog.length === 0 ? 'Sin pendientes abiertos' : 'Nada con ese filtro'}
-                            hint={backlog.length === 0 ? 'Todo lo que tienes está en tu semana o ya está cerrado.' : undefined}
-                        />
-                    ) : (
-                        <ul className="divide-y divide-line">
-                            {visibleBacklog.map(task => (
-                                <SimpleTaskRow key={task._id} task={task} dayControl="none" {...rowProps(task)} />
-                            ))}
-                        </ul>
-                    )}
-                </div>
-
-                <FinishedTasks userId={personId} now={now} timezone={timezone} rowProps={rowProps} />
+            <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr] gap-3 items-start">
+                <div className={activeTab === 'pending' ? 'block' : 'hidden lg:block'}>{pendingColumn}</div>
+                <div className={activeTab === 'review' ? 'block' : 'hidden lg:block'}>{reviewColumn}</div>
+                <div className={activeTab === 'done' ? 'block' : 'hidden lg:block'}>{doneColumn}</div>
             </div>
         </>
     )

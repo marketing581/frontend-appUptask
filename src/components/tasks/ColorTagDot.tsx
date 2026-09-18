@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { TaskColorTag } from '@/types'
 
-/** Naranja y verde son los únicos colores; sin marcar queda gris. Nada de
- *  texto en ningún momento —ni cerrado ni al elegir—, solo el color.
+/** Cuatro colores, sin nombre visible en ningún momento —ni cerrado ni al
+ *  elegir—, solo el color: naranja y verde para las dos marcas, fucsia para
+ *  lo interno del equipo, celeste como cuarta opción. Sin marcar queda gris.
  *
  *  Un `<select>` nativo no lo permite: sus opciones son siempre texto, con o
  *  sin estilo. Por eso este es un menú propio y no el mismo truco que usan
@@ -13,15 +14,27 @@ import { TaskColorTag } from '@/types'
  *  en un portal directo a `<body>`, posicionado por coordenadas: nunca queda
  *  dentro de un contenedor que pueda recortarlo. Se abre con un clic, no con
  *  hover, así que funciona igual con el dedo. */
-const COLORS: Record<'none' | 'orange' | 'green', string> = {
+const COLORS: Record<'none' | 'orange' | 'green' | 'fuchsia' | 'celeste', string> = {
     none: '#cbd5e1',
     orange: '#E64F1B',
-    green: '#418300'
+    green: '#418300',
+    fuchsia: '#D6249F',
+    celeste: '#60A2BF'
 }
 
-const OPTIONS: TaskColorTag[] = [null, 'orange', 'green']
+const OPTIONS: TaskColorTag[] = [null, 'orange', 'green', 'fuchsia', 'celeste']
 
-const labelOf = (value: TaskColorTag) => value === 'orange' ? 'Naranja' : value === 'green' ? 'Verde' : 'Sin definir'
+/** Nombre del color, no de la marca: solo para el tooltip/lector de
+ *  pantalla, nunca se muestra como texto en la tarjeta. */
+const labelOf = (value: TaskColorTag) => {
+    switch (value) {
+        case 'orange': return 'Naranja'
+        case 'green': return 'Verde'
+        case 'fuchsia': return 'Fucsia'
+        case 'celeste': return 'Celeste'
+        default: return 'Sin definir'
+    }
+}
 
 type Props = {
     value: TaskColorTag

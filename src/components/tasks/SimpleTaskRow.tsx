@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { EyeIcon, EyeSlashIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { Task } from '@/types'
 import { ALERT_COLOR, TaskLabel, frequencyShort, getTaskLabel } from '@/utils/taskLabels'
-import { Badge } from '@/components/ui'
+import { kindOf } from '@/utils/taskKind'
+import { Avatar, Badge } from '@/components/ui'
 import ColorTagDot from './ColorTagDot'
+import TaskActionsMenu from './TaskActionsMenu'
 import TaskStatusControl from './TaskStatusControl'
-import PlanDayPicker, { PlanDay } from './PlanDayPicker'
+import { PlanDay } from './PlanDayPicker'
 
 /** Fila de la vista simplificada de "Mi trabajo": lo único que importa
  *  momento a momento. Cambiar el estado y jalar algo a hoy son gestos de un
@@ -16,9 +17,11 @@ import PlanDayPicker, { PlanDay } from './PlanDayPicker'
 /** Tiñe toda la fila con el color, no solo el punto: de un vistazo, sin
  *  tener que leer cada etiqueta. Un tono bajo para no pelear con el texto
  *  ni con el resto de etiquetas de color. */
-const COLOR_WASH: Record<'orange' | 'green', string> = {
+const COLOR_WASH: Record<'orange' | 'green' | 'fuchsia' | 'celeste', string> = {
     orange: 'rgba(230, 79, 27, 0.1)',
-    green: 'rgba(65, 131, 0, 0.1)'
+    green: 'rgba(65, 131, 0, 0.1)',
+    fuchsia: 'rgba(214, 36, 159, 0.1)',
+    celeste: 'rgba(96, 162, 191, 0.15)'
 }
 
 type Props = {
@@ -31,16 +34,19 @@ type Props = {
     canEdit: boolean
     canHide: boolean
     busy: boolean
-    /** Qué control de día mostrar a la derecha:
-     *  - "assign" (por defecto): el selector completo, para elegir un día.
-     *  - "remove": dentro de una columna de "Mi semana" el día ya se ve en la
-     *    cabecera —repetirlo en una etiqueta de color en cada fila no decía
-     *    nada nuevo y se veía mal—, así que ahí solo hace falta poder
-     *    quitarlo.
-     *  - "none": en "Todos mis pendientes" ya se arrastra la fila directo a
-     *    un día de la semana; tener además un botón que hace lo mismo era
-     *    redundante. */
-    dayControl?: 'assign' | 'remove' | 'none'
+    /** Si se puede mover a un día de la semana desde el menú de opciones.
+     *  En "Finalizados" no aplica —una tarea ya cerrada no se planifica—. */
+    showDayOptions?: boolean
+    /** Solo para tareas "Por validar": quién espera aprobarla y desde
+     *  cuándo, ya formateado —no todas las filas la llevan, solo aparece en
+     *  la columna "Por validar". */
+    reviewInfo?: { approverName: string | null, elapsed: string }
+    /** La aprobadora asignada o la encargada, no quien la hizo: aunque
+     *  `canEdit` sea cierto para su dueña, resolver la revisión no le
+     *  corresponde a ella. */
+    canResolveReview?: boolean
+    onApprove?: (taskId: string) => void
+    onRequestChanges?: (taskId: string, note: string) => void
     /** Cambia el estado —incluido "Por validar", que no es un estado real
      *  sino su propio flujo de aprobación— por su nombre en cada transición. */
     onSetLabel: (taskId: string, label: TaskLabel) => void
@@ -51,9 +57,12 @@ type Props = {
 }
 
 export default function SimpleTaskRow({
-    task, weekDays, todayKey, canEdit, canHide, busy, dayControl = 'assign',
+    task, weekDays, todayKey, canEdit, canHide, busy, showDayOptions = true,
+    reviewInfo, canResolveReview, onApprove, onRequestChanges,
     onSetLabel, onSetDay, onPatch, onDelete
 }: Props) {
+    const [adjusting, setAdjusting] = useState(false)
+    const [adjustNote, setAdjustNote] = useState('')
     const label = getTaskLabel(task)
     const done = label === 'done' || !!task.doneForPeriod
     // Una recurrente hecha hoy se ve como "Listo" aunque el estado real siga
@@ -96,7 +105,8 @@ export default function SimpleTaskRow({
     }
 
     const project = task.project && typeof task.project !== 'string' ? task.project : null
-    const recurring = task.frequency && task.frequency !== 'none'
+    const kind = kindOf(task)
+    const participants = project?.team ?? []
 
     // La fecha límite se guarda como fecha simple ("YYYY-MM-DD"), sin hora:
     // se compara igual, tomando esos mismos diez caracteres, para no
@@ -196,19 +206,37 @@ export default function SimpleTaskRow({
                     {dueToday && !overdue && (
                         <Badge className="bg-amber-100 text-amber-900">Vence hoy</Badge>
                     )}
-                    {recurring && (
+                    {kind === 'maintenance' && (
                         <span className="text-2xs text-ink-subtle">
                             {frequencyShort[task.frequency]}
                         </span>
                     )}
-                    {project && (
-                        <Link
-                            to={`/projects/${project._id}`}
-                            onClick={event => event.stopPropagation()}
-                            className="text-2xs text-ink-subtle hover:text-brand-600 hover:underline truncate"
-                        >
-                            {project.projectName}
-                        </Link>
+                    {kind === 'oneOff' && (
+                        <span className="text-2xs text-ink-subtle">Puntual</span>
+                    )}
+                    {kind === 'project' && project && (
+                        <span className="flex items-center gap-1 min-w-0">
+                            <Link
+                                to={`/projects/${project._id}`}
+                                onClick={event => event.stopPropagation()}
+                                className="text-2xs text-ink-subtle hover:text-brand-600 hover:underline truncate"
+                            >
+                                {project.projectName}
+                            </Link>
+                            {participants.length > 0 && (
+                                <span className="flex items-center -space-x-1 shrink-0">
+                                    {participants.slice(0, 3).map(person => (
+                                        <Avatar key={person._id} name={person.name} size="xs" />
+                                    ))}
+                                    {participants.length > 3 && (
+                                        <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-600
+                                            text-[9px] font-semibold grid place-content-center shrink-0">
+                                            +{participants.length - 3}
+                                        </span>
+                                    )}
+                                </span>
+                            )}
+                        </span>
                     )}
                     {task.isPrivate && (
                         <Badge className="bg-slate-200 text-slate-700 ring-1 ring-inset ring-slate-400">
@@ -216,49 +244,73 @@ export default function SimpleTaskRow({
                         </Badge>
                     )}
                 </div>
+
+                {label === 'toValidate' && reviewInfo && (
+                    <div className="mt-2 pt-2 border-t border-line/70">
+                        <p className="text-2xs text-ink-subtle">
+                            {reviewInfo.approverName ? `Espera de ${reviewInfo.approverName}` : 'Espera aprobación'}
+                            {' · '}{reviewInfo.elapsed}
+                        </p>
+                        {canResolveReview && (
+                            adjusting ? (
+                                <div className="flex items-center gap-1.5 mt-1.5">
+                                    <input
+                                        value={adjustNote}
+                                        onChange={event => setAdjustNote(event.target.value)}
+                                        onMouseDown={event => event.stopPropagation()}
+                                        placeholder="¿Qué hay que ajustar?"
+                                        autoFocus
+                                        className="flex-1 h-7 min-w-0 rounded-md border-line-strong text-2xs
+                                            focus:border-brand-500 focus:ring-brand-500"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onRequestChanges?.(task._id, adjustNote)
+                                            setAdjusting(false)
+                                            setAdjustNote('')
+                                        }}
+                                        className="h-7 px-2.5 rounded text-2xs font-semibold text-white
+                                            bg-brand-600 hover:bg-brand-700 shrink-0"
+                                    >
+                                        Enviar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setAdjusting(false); setAdjustNote('') }}
+                                        className="h-7 px-2 rounded text-2xs font-semibold text-ink-muted
+                                            hover:bg-slate-100 shrink-0"
+                                    >
+                                        No
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-1.5 mt-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => onApprove?.(task._id)}
+                                        className="h-7 px-2.5 rounded text-2xs font-semibold text-white
+                                            bg-emerald-600 hover:bg-emerald-700"
+                                    >
+                                        Aprobar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAdjusting(true)}
+                                        className="h-7 px-2.5 rounded text-2xs font-semibold text-ink-muted
+                                            hover:bg-slate-100"
+                                    >
+                                        Solicitar ajustes
+                                    </button>
+                                </div>
+                            )
+                        )}
+                    </div>
+                )}
             </div>
 
             <div className="flex items-center gap-0.5 shrink-0 mt-0.5">
-                {dayControl === 'remove' ? (
-                    canEdit && (
-                        <button
-                            type="button"
-                            onClick={() => onSetDay(task._id, null)}
-                            title="Quitar de este día"
-                            aria-label={`Quitar "${task.name}" de este día`}
-                            className="w-7 h-7 grid place-content-center rounded-full text-ink-subtle
-                                opacity-0 group-hover:opacity-100 focus:opacity-100
-                                hover:bg-slate-200 transition-opacity"
-                        >
-                            <XMarkIcon className="w-4 h-4" />
-                        </button>
-                    )
-                ) : dayControl === 'assign' ? (
-                    <PlanDayPicker
-                        days={weekDays}
-                        activeKey={plannedKey}
-                        onSelect={dayKey => onSetDay(task._id, dayKey)}
-                    />
-                ) : null}
-
-                {canHide && (
-                    <button
-                        type="button"
-                        onClick={() => onPatch(task._id, { isPrivate: !task.isPrivate })}
-                        title={task.isPrivate ? 'Mostrarlo al equipo' : 'Ocultarlo: solo tú lo verás'}
-                        aria-label={task.isPrivate ? 'Mostrar al equipo' : 'Ocultar al equipo'}
-                        className={`w-7 h-7 grid place-content-center rounded-full transition-opacity
-                            hover:bg-slate-200 ${
-                            task.isPrivate
-                                ? 'text-ink-muted'
-                                : 'text-ink-subtle opacity-0 group-hover:opacity-100 focus:opacity-100'
-                        }`}
-                    >
-                        {task.isPrivate ? <EyeIcon className="w-4 h-4" /> : <EyeSlashIcon className="w-4 h-4" />}
-                    </button>
-                )}
-
-                {canEdit && (confirming ? (
+                {confirming ? (
                     <span className="flex items-center gap-1">
                         <button
                             type="button"
@@ -276,18 +328,19 @@ export default function SimpleTaskRow({
                         </button>
                     </span>
                 ) : (
-                    <button
-                        type="button"
-                        onClick={() => setConfirming(true)}
-                        title="Eliminar pendiente"
-                        aria-label={`Eliminar "${task.name}"`}
-                        className="w-7 h-7 grid place-content-center rounded-full text-ink-subtle
-                            opacity-0 group-hover:opacity-100 focus:opacity-100
-                            hover:bg-red-50 hover:text-red-600 transition-opacity"
-                    >
-                        <TrashIcon className="w-4 h-4" />
-                    </button>
-                ))}
+                    <TaskActionsMenu
+                        taskName={task.name}
+                        weekDays={weekDays}
+                        plannedKey={plannedKey}
+                        showDayOptions={showDayOptions}
+                        canEdit={canEdit}
+                        canHide={canHide}
+                        isPrivate={!!task.isPrivate}
+                        onSetDay={dayKey => onSetDay(task._id, dayKey)}
+                        onToggleHide={() => onPatch(task._id, { isPrivate: !task.isPrivate })}
+                        onRequestDelete={() => setConfirming(true)}
+                    />
+                )}
             </div>
         </li>
     )
