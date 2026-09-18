@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom'
 import { Task } from '@/types'
 import { ALERT_COLOR, TaskLabel, frequencyShort, getTaskLabel } from '@/utils/taskLabels'
 import { kindOf } from '@/utils/taskKind'
+import { plainPreview } from '@/utils/markdown'
 import { Avatar, Badge } from '@/components/ui'
 import ColorTagDot from './ColorTagDot'
+import DescriptionModal from './DescriptionModal'
 import TaskActionsMenu from './TaskActionsMenu'
 import TaskStatusControl from './TaskStatusControl'
 import { PlanDay } from './PlanDayPicker'
@@ -71,7 +73,7 @@ export default function SimpleTaskRow({
     const effectiveLabel: TaskLabel = task.doneForPeriod ? 'done' : label
     const [name, setName] = useState(task.name)
     const [confirming, setConfirming] = useState(false)
-    const inputRef = useRef<HTMLInputElement>(null)
+    const inputRef = useRef<HTMLTextAreaElement>(null)
 
     useEffect(() => { setName(task.name) }, [task.name])
 
@@ -82,10 +84,18 @@ export default function SimpleTaskRow({
         onPatch(task._id, { name: next })
     }
 
-    // Un textarea que crece con el contenido, en vez de un modal: se escribe
-    // ahí mismo y se guarda sola al salir, igual que el nombre.
+    // Corta, se escribe ahí mismo y se guarda sola al salir, igual que el
+    // nombre —pero solo hasta cierta altura: pasado eso, "Ampliar editor"
+    // lleva al modal en vez de seguir agrandando la tarjeta.
     const [description, setDescription] = useState(task.description ?? '')
+    const [descFocused, setDescFocused] = useState(false)
+    const [showExpandEditor, setShowExpandEditor] = useState(false)
+    const [showViewMore, setShowViewMore] = useState(false)
+    const [descModalOpen, setDescModalOpen] = useState(false)
     const descriptionRef = useRef<HTMLTextAreaElement>(null)
+    const descPreviewRef = useRef<HTMLParagraphElement>(null)
+
+    const INLINE_DESCRIPTION_MAX_PX = 48 // unas tres líneas a este tamaño de texto
 
     useEffect(() => { setDescription(task.description ?? '') }, [task.description])
 
@@ -93,13 +103,30 @@ export default function SimpleTaskRow({
         const el = descriptionRef.current
         if (!el) return
         el.style.height = 'auto'
-        el.style.height = `${el.scrollHeight}px`
+        const natural = el.scrollHeight
+        el.style.height = `${Math.min(natural, INLINE_DESCRIPTION_MAX_PX)}px`
+        setShowExpandEditor(natural > INLINE_DESCRIPTION_MAX_PX)
     }
 
-    useEffect(resizeDescription, [description])
+    useEffect(resizeDescription, [description, descFocused])
+
+    // Se mide en vez de adivinar por caracteres: exacto sin importar cuánto
+    // ocupe cada línea según el ancho de la tarjeta.
+    useEffect(() => {
+        if (descFocused) return
+        const el = descPreviewRef.current
+        setShowViewMore(!!el && el.scrollHeight > el.clientHeight + 1)
+    }, [description, descFocused])
 
     const commitDescription = () => {
         const next = description.trim()
+        if (next === (task.description ?? '')) return
+        onPatch(task._id, { description: next })
+    }
+
+    const saveDescriptionFromModal = (value: string) => {
+        setDescription(value)
+        const next = value.trim()
         if (next === (task.description ?? '')) return
         onPatch(task._id, { description: next })
     }
@@ -133,14 +160,14 @@ export default function SimpleTaskRow({
             } ${canEdit ? 'cursor-grab active:cursor-grabbing' : ''}`}
         >
             <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-start gap-1.5">
                     <ColorTagDot
                         value={colorTag}
                         disabled={!canEdit}
                         onChange={next => onPatch(task._id, { colorTag: next })}
                     />
                     {canEdit ? (
-                        <input
+                        <textarea
                             ref={inputRef}
                             value={name}
                             onChange={event => setName(event.target.value)}
@@ -149,15 +176,17 @@ export default function SimpleTaskRow({
                                 if (event.key === 'Enter') { event.preventDefault(); inputRef.current?.blur() }
                                 if (event.key === 'Escape') { setName(task.name); inputRef.current?.blur() }
                             }}
+                            rows={1}
                             aria-label={`Nombre de ${task.name}`}
                             title={task.name}
                             className={`min-w-0 flex-1 border-0 p-0 bg-transparent text-sm font-medium
-                                leading-snug focus:ring-0 rounded truncate ${
+                                leading-snug focus:ring-0 rounded resize-none overflow-y-auto
+                                max-h-[2.6em] ${
                                 done ? 'text-ink-subtle line-through' : 'text-ink'
                             }`}
                         />
                     ) : (
-                        <p title={task.name} className={`min-w-0 flex-1 truncate text-sm font-medium leading-snug ${
+                        <p title={task.name} className={`min-w-0 flex-1 line-clamp-2 text-sm font-medium leading-snug ${
                             done ? 'text-ink-subtle line-through' : 'text-ink'
                         }`}>
                             {task.name}
@@ -165,28 +194,88 @@ export default function SimpleTaskRow({
                     )}
                 </div>
 
-                {canEdit ? (
-                    <textarea
-                        ref={descriptionRef}
-                        value={description}
-                        onChange={event => setDescription(event.target.value)}
-                        onBlur={commitDescription}
-                        onMouseDown={event => event.stopPropagation()}
-                        onKeyDown={event => {
-                            if (event.key === 'Escape') { setDescription(task.description ?? ''); descriptionRef.current?.blur() }
-                        }}
-                        placeholder="Descripción"
-                        rows={1}
-                        aria-label={`Descripción de ${task.name}`}
-                        className="block w-full resize-none overflow-hidden border-0 p-0 mt-0.5 bg-transparent
-                            text-2xs leading-snug text-ink-subtle placeholder:text-ink-subtle/60
-                            focus:ring-0"
-                    />
-                ) : task.description ? (
-                    <p className="text-2xs leading-snug text-ink-subtle mt-0.5 whitespace-pre-wrap">
-                        {task.description}
-                    </p>
-                ) : null}
+                {canEdit && descFocused ? (
+                    <div className="mt-0.5">
+                        <textarea
+                            ref={descriptionRef}
+                            value={description}
+                            onChange={event => setDescription(event.target.value)}
+                            onBlur={() => { commitDescription(); setDescFocused(false) }}
+                            onMouseDown={event => event.stopPropagation()}
+                            onKeyDown={event => {
+                                if (event.key === 'Escape') {
+                                    setDescription(task.description ?? '')
+                                    descriptionRef.current?.blur()
+                                }
+                            }}
+                            placeholder="Descripción"
+                            autoFocus
+                            aria-label={`Descripción de ${task.name}`}
+                            className="block w-full resize-none overflow-y-auto border-0 p-0 bg-transparent
+                                text-2xs leading-snug text-ink-subtle placeholder:text-ink-subtle/60
+                                focus:ring-0"
+                        />
+                        {showExpandEditor && (
+                            <button
+                                type="button"
+                                onMouseDown={event => event.stopPropagation()}
+                                onClick={() => {
+                                    commitDescription()
+                                    setDescFocused(false)
+                                    setDescModalOpen(true)
+                                }}
+                                className="block text-2xs font-semibold text-brand-600 hover:underline"
+                            >
+                                Ampliar editor
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    <div className="mt-0.5">
+                        {description ? (
+                            <>
+                                <p
+                                    ref={descPreviewRef}
+                                    onClick={() => canEdit && setDescFocused(true)}
+                                    onMouseDown={event => event.stopPropagation()}
+                                    className={`text-2xs leading-snug text-ink-subtle whitespace-pre-line line-clamp-2 ${
+                                        canEdit ? 'cursor-text' : ''
+                                    }`}
+                                >
+                                    {plainPreview(description, 240)}
+                                </p>
+                                {showViewMore && (
+                                    <button
+                                        type="button"
+                                        onMouseDown={event => event.stopPropagation()}
+                                        onClick={() => setDescModalOpen(true)}
+                                        className="block text-2xs font-semibold text-brand-600 hover:underline"
+                                    >
+                                        Ver más
+                                    </button>
+                                )}
+                            </>
+                        ) : canEdit ? (
+                            <button
+                                type="button"
+                                onMouseDown={event => event.stopPropagation()}
+                                onClick={() => setDescFocused(true)}
+                                className="text-2xs text-ink-subtle/60 hover:text-ink-subtle"
+                            >
+                                Añadir descripción
+                            </button>
+                        ) : null}
+                    </div>
+                )}
+
+                <DescriptionModal
+                    isOpen={descModalOpen}
+                    taskName={task.name}
+                    initialValue={description}
+                    canEdit={canEdit}
+                    onSave={saveDescriptionFromModal}
+                    onClose={() => setDescModalOpen(false)}
+                />
 
                 {/* El estado va primero, como un tag más: se cambia con el
                     mismo gesto con que se lee el resto —de qué tipo es, si

@@ -4,8 +4,10 @@ import StarterKit from '@tiptap/starter-kit'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import Placeholder from '@tiptap/extension-placeholder'
+import Link from '@tiptap/extension-link'
+import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
-import { CheckCircleIcon, ListBulletIcon } from '@heroicons/react/24/outline'
+import { CheckCircleIcon, LinkIcon, ListBulletIcon, PhotoIcon } from '@heroicons/react/24/outline'
 
 /** Editor visual de una nota.
  *
@@ -47,6 +49,15 @@ export default function RichNoteEditor({
             // Las casillas se pueden marcar incluso en modo lectura: es el
             // gesto más frecuente en una lista de pendientes.
             TaskItem.configure({ nested: true, onReadOnlyChecked: () => true }),
+            Link.configure({
+                openOnClick: false,
+                autolink: true,
+                HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' }
+            }),
+            // Por URL, no por archivo subido: esta app todavía no tiene dónde
+            // guardar imágenes propias, así que se enlaza una ya alojada en
+            // otro lado (Drive, Canva, etc.), no se sube nada nuevo.
+            Image.configure({ inline: false }),
             Placeholder.configure({
                 placeholder: placeholder ?? 'Escribe aquí…'
             }),
@@ -88,6 +99,23 @@ export default function RichNoteEditor({
     }, [editable, editor])
 
     if (!editor) return null
+
+    const setLink = () => {
+        const current = editor.getAttributes('link').href as string | undefined
+        const url = window.prompt('Enlace (URL)', current ?? 'https://')
+        if (url === null) return
+        if (url.trim() === '') {
+            editor.chain().focus().extendMarkRange('link').unsetLink().run()
+            return
+        }
+        editor.chain().focus().extendMarkRange('link').setLink({ href: url.trim() }).run()
+    }
+
+    const addImage = () => {
+        const url = window.prompt('URL de la imagen (ya alojada en algún lado, no se sube archivo)')
+        if (!url || url.trim() === '') return
+        editor.chain().focus().setImage({ src: url.trim() }).run()
+    }
 
     return (
         <div className="flex flex-col h-full">
@@ -139,6 +167,20 @@ export default function RichNoteEditor({
                         onClick={() => editor.chain().focus().toggleTaskList().run()}
                         className={`${BUTTON} ${editor.isActive('taskList') ? ACTIVE : ''}`}
                     ><CheckCircleIcon className="w-4 h-4" /></button>
+
+                    <span className="w-px h-5 bg-line mx-1 shrink-0" />
+
+                    <button
+                        type="button" title="Enlace" aria-label="Enlace"
+                        onClick={setLink}
+                        className={`${BUTTON} ${editor.isActive('link') ? ACTIVE : ''}`}
+                    ><LinkIcon className="w-4 h-4" /></button>
+
+                    <button
+                        type="button" title="Imagen (por URL)" aria-label="Imagen por URL"
+                        onClick={addImage}
+                        className={BUTTON}
+                    ><PhotoIcon className="w-4 h-4" /></button>
 
                     <span className="ml-2 text-2xs text-ink-subtle whitespace-nowrap hidden sm:block">
                         Escribe <code className="font-mono">[]</code> y un espacio para una casilla

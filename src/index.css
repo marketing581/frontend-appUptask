@@ -70,6 +70,7 @@
     .memo-body pre code { @apply bg-transparent p-0; }
     .memo-body a { @apply text-brand-600 underline; }
     .memo-body hr { @apply border-line my-4; }
+    .memo-body img { @apply max-w-full h-auto rounded-md my-2; }
 
     /* Listas de tareas: la casilla es una casilla de verdad y lo hecho se tacha. */
     .memo-body ul[data-type="taskList"] { @apply list-none pl-0 my-2 space-y-1; }

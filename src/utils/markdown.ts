@@ -35,8 +35,15 @@ export function plainPreview(source: string, max = 180): string {
         .replace(/^#{1,6}\s+/gm, '')
         .replace(/^\s*[-*+]\s+\[[ xX]\]\s*/gm, '')
         .replace(/^\s*[-*+]\s+/gm, '')
+        // Imagen: sin alt no aporta nada al texto, se quita entera.
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, (_match, alt) => alt || '')
+        // Enlace: queda el texto visible, se pierde la URL.
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
         .replace(/\*\*(.+?)\*\*/g, '$1')
         .replace(/[*_`>]/g, '')
+        // Una imagen sin alt deja su línea vacía; se descarta en vez de
+        // contarla como un salto de párrafo más.
+        .replace(/^[ \t]*\n/gm, '')
         .replace(/\n{2,}/g, '\n')
         .trim()
 
