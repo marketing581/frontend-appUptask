@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useNavBadges } from '@/hooks/useNavBadges'
 import { NAV_SECTIONS, NavItem } from './navigation'
 import { Avatar } from '@/components/ui'
+import { REPORTS_OWNER_ID } from '@/utils/reportsAccess'
 
 function NavRow({ item, count, onNavigate }: {
     item: NavItem
@@ -70,13 +71,18 @@ function NavRow({ item, count, onNavigate }: {
     )
 }
 
-function SidebarContent({ onNavigate, name, role }: {
+function SidebarContent({ onNavigate, name, role, userId }: {
     onNavigate?: () => void
     name: string
     role?: string
+    userId: string
 }) {
     const queryClient = useQueryClient()
     const badges = useNavBadges()
+    const sections = NAV_SECTIONS.map(section => ({
+        ...section,
+        items: section.items.filter(item => !item.ownerOnly || userId === REPORTS_OWNER_ID)
+    }))
 
     const logout = () => {
         localStorage.removeItem('AUTH_TOKEN')
@@ -101,7 +107,7 @@ function SidebarContent({ onNavigate, name, role }: {
             </Link>
 
             <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label="Navegación principal">
-                {NAV_SECTIONS.map(section => (
+                {sections.map(section => (
                     <div key={section.heading}>
                         <p className="eyebrow px-2 mb-1.5">{section.heading}</p>
                         <ul className="space-y-0.5">
@@ -158,6 +164,8 @@ function SidebarContent({ onNavigate, name, role }: {
 function useCurrentSection() {
     const { pathname } = useLocation()
     for (const section of NAV_SECTIONS) {
+        // ownerOnly no importa aquí: si alguien llega a /informes por URL
+        // directa sin ser la dueña, la vista igual se encarga de bloquearla.
         for (const item of section.items) {
             if (item.end ? pathname === item.to : pathname.startsWith(item.to)) return item.label
         }
@@ -198,7 +206,7 @@ export default function AppLayout() {
         <div className="min-h-screen lg:pl-sidebar">
             <aside className="hidden lg:flex fixed inset-y-0 left-0 w-sidebar bg-surface
                 border-r border-line z-30">
-                <SidebarContent name={data.name} role={data.role} />
+                <SidebarContent name={data.name} role={data.role} userId={data._id} />
             </aside>
 
             <header className="lg:hidden sticky top-0 z-20 h-14 bg-surface border-b border-line
@@ -238,6 +246,7 @@ export default function AppLayout() {
                         <SidebarContent
                             name={data.name}
                             role={data.role}
+                            userId={data._id}
                             onNavigate={() => setDrawerOpen(false)}
                         />
                     </div>

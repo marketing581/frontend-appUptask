@@ -331,3 +331,22 @@ export const memoSchema = z.object({
 })
 export const memoListSchema = z.array(memoSchema)
 export type Memo = z.infer<typeof memoSchema>
+
+/** Informe: tiempo de "En proceso" a "Listo", en horario laboral. */
+export const taskDurationRowSchema = z.object({
+    taskId: z.string(),
+    taskName: z.string(),
+    assigneeName: z.string(),
+    startedAt: z.string().nullable(),
+    finishedAt: z.string(),
+    businessMinutes: z.number().nullable()
+})
+export const taskDurationReportSchema = z.object({
+    periodStart: z.string(),
+    periodEnd: z.string(),
+    finishedCount: z.number(),
+    averageMinutes: z.number().nullable(),
+    rows: z.array(taskDurationRowSchema)
+})
+export type TaskDurationRow = z.infer<typeof taskDurationRowSchema>
+export type TaskDurationReport = z.infer<typeof taskDurationReportSchema>

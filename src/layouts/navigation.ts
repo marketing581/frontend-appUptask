@@ -1,5 +1,6 @@
 import {
     CalendarDaysIcon,
+    ChartBarIcon,
     DocumentTextIcon,
     RectangleStackIcon,
     Squares2X2Icon,
@@ -26,6 +27,8 @@ export interface NavItem {
     icon: typeof Squares2X2Icon
     end: boolean
     badge: NavBadge
+    /** Solo visible para la cuenta dueña del ítem (ver `REPORTS_OWNER_ID`). */
+    ownerOnly?: boolean
 }
 
 export interface NavSection {
@@ -89,6 +92,15 @@ export const NAV_SECTIONS: NavSection[] = [
                 icon: DocumentTextIcon,
                 end: false,
                 badge: null
+            },
+            {
+                to: '/informes',
+                label: 'Informes',
+                hint: 'Tiempo de resolución del equipo',
+                icon: ChartBarIcon,
+                end: false,
+                badge: null,
+                ownerOnly: true
             }
         ]
     }
