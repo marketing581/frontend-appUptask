@@ -73,6 +73,28 @@ export default function SimpleTaskRow({
         onPatch(task._id, { name: next })
     }
 
+    // Un textarea que crece con el contenido, en vez de un modal: se escribe
+    // ahí mismo y se guarda sola al salir, igual que el nombre.
+    const [description, setDescription] = useState(task.description ?? '')
+    const descriptionRef = useRef<HTMLTextAreaElement>(null)
+
+    useEffect(() => { setDescription(task.description ?? '') }, [task.description])
+
+    const resizeDescription = () => {
+        const el = descriptionRef.current
+        if (!el) return
+        el.style.height = 'auto'
+        el.style.height = `${el.scrollHeight}px`
+    }
+
+    useEffect(resizeDescription, [description])
+
+    const commitDescription = () => {
+        const next = description.trim()
+        if (next === (task.description ?? '')) return
+        onPatch(task._id, { description: next })
+    }
+
     const project = task.project && typeof task.project !== 'string' ? task.project : null
     const recurring = task.frequency && task.frequency !== 'none'
 
@@ -132,6 +154,29 @@ export default function SimpleTaskRow({
                         </p>
                     )}
                 </div>
+
+                {canEdit ? (
+                    <textarea
+                        ref={descriptionRef}
+                        value={description}
+                        onChange={event => setDescription(event.target.value)}
+                        onBlur={commitDescription}
+                        onMouseDown={event => event.stopPropagation()}
+                        onKeyDown={event => {
+                            if (event.key === 'Escape') { setDescription(task.description ?? ''); descriptionRef.current?.blur() }
+                        }}
+                        placeholder="Descripción"
+                        rows={1}
+                        aria-label={`Descripción de ${task.name}`}
+                        className="block w-full resize-none overflow-hidden border-0 p-0 mt-0.5 bg-transparent
+                            text-2xs leading-snug text-ink-subtle placeholder:text-ink-subtle/60
+                            focus:ring-0"
+                    />
+                ) : task.description ? (
+                    <p className="text-2xs leading-snug text-ink-subtle mt-0.5 whitespace-pre-wrap">
+                        {task.description}
+                    </p>
+                ) : null}
 
                 {/* El estado va primero, como un tag más: se cambia con el
                     mismo gesto con que se lee el resto —de qué tipo es, si

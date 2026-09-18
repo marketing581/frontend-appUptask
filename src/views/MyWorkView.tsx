@@ -204,7 +204,12 @@ function FinishedTasks({ userId, now, timezone, rowProps }: {
                                         </p>
                                         <ul className="divide-y divide-line">
                                             {group.tasks.map(task => (
-                                                <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
+                                                <SimpleTaskRow
+                                                    key={task._id}
+                                                    task={task}
+                                                    dayControl="none"
+                                                    {...rowProps(task)}
+                                                />
                                             ))}
                                         </ul>
                                     </div>
@@ -212,7 +217,12 @@ function FinishedTasks({ userId, now, timezone, rowProps }: {
                             ) : (
                                 <ul className="divide-y divide-line">
                                     {tasks.map(task => (
-                                        <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
+                                        <SimpleTaskRow
+                                            key={task._id}
+                                            task={task}
+                                            dayControl="none"
+                                            {...rowProps(task)}
+                                        />
                                     ))}
                                 </ul>
                             )}
