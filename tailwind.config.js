@@ -24,7 +24,11 @@ export default {
         ink: {
           DEFAULT: '#1c1f33',
           muted: '#5a6079',
-          subtle: '#868ca3',
+          // Antes #868ca3 (3.34:1 sobre blanco, no llegaba al mínimo de
+          // accesibilidad AA de 4.5:1 — bastante menos sobre las tarjetas
+          // con tinte de marca). Este tono da ~4.5-5.3:1 en blanco y en los
+          // cuatro tintes, y sigue leyéndose más claro que `ink-muted`.
+          subtle: '#656b83',
         },
 
         brand: {

@@ -155,8 +155,8 @@ export default function SimpleTaskRow({
                 event.dataTransfer.effectAllowed = 'move'
             }}
             style={colorTag ? { backgroundColor: COLOR_WASH[colorTag] } : undefined}
-            className={`group flex items-start gap-2 px-3 py-2 transition-colors ${
-                colorTag ? '' : 'hover:bg-surface-sunken'
+            className={`group flex items-start gap-2 px-3 py-2 transition-all ${
+                colorTag ? 'hover:brightness-[0.97]' : 'hover:bg-surface-sunken'
             } ${canEdit ? 'cursor-grab active:cursor-grabbing' : ''}`}
         >
             <div className="min-w-0 flex-1">
