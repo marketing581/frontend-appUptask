@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ArrowsPointingOutIcon } from '@heroicons/react/24/outline'
 import { Task } from '@/types'
 import { ALERT_COLOR, TaskLabel, frequencyShort, getTaskLabel } from '@/utils/taskLabels'
 import { kindOf } from '@/utils/taskKind'
@@ -194,79 +195,99 @@ export default function SimpleTaskRow({
                     )}
                 </div>
 
-                {canEdit && descFocused ? (
-                    <div className="mt-0.5">
-                        <textarea
-                            ref={descriptionRef}
-                            value={description}
-                            onChange={event => setDescription(event.target.value)}
-                            onBlur={() => { commitDescription(); setDescFocused(false) }}
-                            onMouseDown={event => event.stopPropagation()}
-                            onKeyDown={event => {
-                                if (event.key === 'Escape') {
-                                    setDescription(task.description ?? '')
-                                    descriptionRef.current?.blur()
-                                }
-                            }}
-                            placeholder="Descripción"
-                            autoFocus
-                            aria-label={`Descripción de ${task.name}`}
-                            className="block w-full resize-none overflow-y-auto border-0 p-0 bg-transparent
-                                text-2xs leading-snug text-ink-subtle placeholder:text-ink-subtle/60
-                                focus:ring-0"
-                        />
-                        {showExpandEditor && (
-                            <button
-                                type="button"
+                <div className="flex items-start gap-1 mt-0.5">
+                    {canEdit && descFocused ? (
+                        <div className="min-w-0 flex-1">
+                            <textarea
+                                ref={descriptionRef}
+                                value={description}
+                                onChange={event => setDescription(event.target.value)}
+                                onBlur={() => { commitDescription(); setDescFocused(false) }}
                                 onMouseDown={event => event.stopPropagation()}
-                                onClick={() => {
-                                    commitDescription()
-                                    setDescFocused(false)
-                                    setDescModalOpen(true)
+                                onKeyDown={event => {
+                                    if (event.key === 'Escape') {
+                                        setDescription(task.description ?? '')
+                                        descriptionRef.current?.blur()
+                                    }
                                 }}
-                                className="block text-2xs font-semibold text-brand-600 hover:underline"
-                            >
-                                Ampliar editor
-                            </button>
-                        )}
-                    </div>
-                ) : (
-                    <div className="mt-0.5">
-                        {description ? (
-                            <>
-                                <p
-                                    ref={descPreviewRef}
-                                    onClick={() => canEdit && setDescFocused(true)}
+                                placeholder="Descripción"
+                                autoFocus
+                                aria-label={`Descripción de ${task.name}`}
+                                className="block w-full resize-none overflow-y-auto border-0 p-0 bg-transparent
+                                    text-2xs leading-snug text-ink-subtle placeholder:text-ink-subtle/60
+                                    focus:ring-0"
+                            />
+                            {showExpandEditor && (
+                                <button
+                                    type="button"
                                     onMouseDown={event => event.stopPropagation()}
-                                    className={`text-2xs leading-snug text-ink-subtle whitespace-pre-line line-clamp-2 ${
-                                        canEdit ? 'cursor-text' : ''
-                                    }`}
+                                    onClick={() => {
+                                        commitDescription()
+                                        setDescFocused(false)
+                                        setDescModalOpen(true)
+                                    }}
+                                    className="block text-2xs font-semibold text-brand-600 hover:underline"
                                 >
-                                    {plainPreview(description, 240)}
-                                </p>
-                                {showViewMore && (
-                                    <button
-                                        type="button"
+                                    Ampliar editor
+                                </button>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="min-w-0 flex-1">
+                            {description ? (
+                                <>
+                                    <p
+                                        ref={descPreviewRef}
+                                        onClick={() => canEdit && setDescFocused(true)}
                                         onMouseDown={event => event.stopPropagation()}
-                                        onClick={() => setDescModalOpen(true)}
-                                        className="block text-2xs font-semibold text-brand-600 hover:underline"
+                                        className={`text-2xs leading-snug text-ink-subtle whitespace-pre-line line-clamp-2 ${
+                                            canEdit ? 'cursor-text' : ''
+                                        }`}
                                     >
-                                        Ver más
-                                    </button>
-                                )}
-                            </>
-                        ) : canEdit ? (
-                            <button
-                                type="button"
-                                onMouseDown={event => event.stopPropagation()}
-                                onClick={() => setDescFocused(true)}
-                                className="text-2xs text-ink-subtle/60 hover:text-ink-subtle"
-                            >
-                                Añadir descripción
-                            </button>
-                        ) : null}
-                    </div>
-                )}
+                                        {plainPreview(description, 240)}
+                                    </p>
+                                    {showViewMore && (
+                                        <button
+                                            type="button"
+                                            onMouseDown={event => event.stopPropagation()}
+                                            onClick={() => setDescModalOpen(true)}
+                                            className="block text-2xs font-semibold text-brand-600 hover:underline"
+                                        >
+                                            Ver más
+                                        </button>
+                                    )}
+                                </>
+                            ) : canEdit ? (
+                                <button
+                                    type="button"
+                                    onMouseDown={event => event.stopPropagation()}
+                                    onClick={() => setDescFocused(true)}
+                                    className="text-2xs text-ink-subtle/60 hover:text-ink-subtle"
+                                >
+                                    Añadir descripción
+                                </button>
+                            ) : null}
+                        </div>
+                    )}
+
+                    {/* Siempre a la vista, tenga o no ya texto: sin esto, la
+                        única forma de llegar al editor completo era escribir
+                        tanto que desbordara el campo corto —invisible si la
+                        tarjeta estaba vacía o con poco texto—. */}
+                    {(canEdit || description) && (
+                        <button
+                            type="button"
+                            onMouseDown={event => event.stopPropagation()}
+                            onClick={() => setDescModalOpen(true)}
+                            title="Descripción completa"
+                            aria-label={`Descripción completa de ${task.name}`}
+                            className="w-5 h-5 shrink-0 grid place-content-center rounded text-ink-subtle/70
+                                hover:bg-slate-200 hover:text-ink transition-colors"
+                        >
+                            <ArrowsPointingOutIcon className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                </div>
 
                 <DescriptionModal
                     isOpen={descModalOpen}
