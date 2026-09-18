@@ -564,7 +564,7 @@ export default function MyWorkView() {
                     hint={backlog.length === 0 ? 'Todo lo que tienes está en tu semana o ya está cerrado.' : undefined}
                 />
             ) : (
-                <ul className="divide-y divide-line">
+                <ul className="divide-y divide-line max-h-96 overflow-y-auto">
                     {visibleBacklog.map(task => (
                         <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
                     ))}
@@ -589,7 +589,7 @@ export default function MyWorkView() {
                     hint="Lo que se envíe a validar aparece aquí, sin importar la semana."
                 />
             ) : (
-                <ul className="divide-y divide-line">
+                <ul className="divide-y divide-line max-h-96 overflow-y-auto">
                     {reviewTasks.map(task => (
                         <SimpleTaskRow key={task._id} task={task} showDayOptions={false} {...rowProps(task)} />
                     ))}
@@ -710,7 +710,10 @@ export default function MyWorkView() {
                                 ) : (
                                     <>
                                         {dayTasks.length > 0 && (
-                                            <ul className="divide-y divide-line">
+                                            // Con muchos pendientes en un solo día, la columna
+                                            // no estira toda la pantalla: se desplaza por dentro,
+                                            // igual que ya hace "Finalizados".
+                                            <ul className="divide-y divide-line max-h-96 overflow-y-auto">
                                                 {dayTasks.map(task => (
                                                     <SimpleTaskRow
                                                         key={task._id}
