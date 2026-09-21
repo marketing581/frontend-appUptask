@@ -98,8 +98,12 @@ function bucketOf(task: Task, now: Date, timezone: string): FinishedBucket {
 
 type RowProps = Omit<ComponentProps<typeof SimpleTaskRow>, 'task'>
 
-function FinishedTasks({ userId, now, timezone, rowProps }: {
+function FinishedTasks({ userId, now, timezone, rowProps, onDragOver, onDragLeave, onDrop, isDropTarget }: {
     userId?: string, now: Date, timezone: string, rowProps: (task: Task) => RowProps
+    onDragOver: (event: React.DragEvent) => void
+    onDragLeave: () => void
+    onDrop: (event: React.DragEvent) => void
+    isDropTarget: boolean
 }) {
     const [term, setTerm] = useState('')
     const query = useDebounced(term, 300)
@@ -139,7 +143,14 @@ function FinishedTasks({ userId, now, timezone, rowProps }: {
     }, [tasks, query, now, timezone])
 
     return (
-        <div className="card overflow-hidden">
+        <div
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            className={`card overflow-hidden transition-shadow ${
+                isDropTarget ? 'ring-2 ring-brand-500 shadow-raised' : ''
+            }`}
+        >
             <div className="flex items-center justify-between px-3 h-11 border-b border-line">
                 <h2 className="text-sm font-bold text-ink">
                     Finalizados
@@ -298,12 +309,54 @@ export default function MyWorkView() {
      *  necesidad de arrastrar, para quien prefiera tocar en vez de arrastrar. */
     const [dragOverKey, setDragOverKey] = useState<string | null>(null)
     const PLAN_MIME = 'application/x-uptask-plan-task'
+    // Va aparte del id: una tarea Listo ya no está en las listas abiertas, así
+    // que no hay dónde buscarla para saber de dónde viene. Esto lo dice sin
+    // necesidad de encontrarla.
+    const LABEL_MIME = 'application/x-uptask-plan-label'
 
     const dropOnto = (targetKey: string | null) => (event: React.DragEvent) => {
         event.preventDefault()
         const taskId = event.dataTransfer.getData(PLAN_MIME)
-        if (taskId) patchTask({ taskId, formData: { plannedDate: targetKey } })
         setDragOverKey(null)
+        if (!taskId) return
+
+        const fromLabel = event.dataTransfer.getData(LABEL_MIME) as TaskLabel
+        if (fromLabel === 'done') {
+            // Sacarla de Finalizados la reabre: puede que haya quedado algo
+            // por cerrar. Primero se reabre y, ya reabierta, se programa.
+            setStatus({ taskId, status: 'pending' }, {
+                onSuccess: () => patchTask({ taskId, formData: { plannedDate: targetKey } })
+            })
+        } else {
+            patchTask({ taskId, formData: { plannedDate: targetKey } })
+        }
+    }
+
+    /** Soltar sobre "Por validar" o "Finalizados" no programa un día: cambia
+     *  la etiqueta, igual que elegirla en el selector de cada fila —mismo
+     *  camino, solo que arrastrando. */
+    const dropOntoLabel = (label: TaskLabel) => (event: React.DragEvent) => {
+        event.preventDefault()
+        const taskId = event.dataTransfer.getData(PLAN_MIME)
+        setDragOverKey(null)
+        if (!taskId) return
+
+        const fromLabel = event.dataTransfer.getData(LABEL_MIME) as TaskLabel
+        if (label === 'toValidate') {
+            if (fromLabel === 'done') {
+                // Una tarea Listo no puede pedir validación directo —el
+                // servidor lo rechaza—: hay que reabrirla primero.
+                setStatus({ taskId, status: 'inProgress' }, {
+                    onSuccess: () => requestReview({ taskId })
+                })
+            } else {
+                requestReview({ taskId })
+            }
+        } else if (label === 'done' && fromLabel === 'toValidate') {
+            resolveReview({ taskId, approved: true })
+        } else {
+            setStatus({ taskId, status: label })
+        }
     }
 
     const refresh = () => {
@@ -564,7 +617,14 @@ export default function MyWorkView() {
     )
 
     const reviewColumn = (
-        <div className="card overflow-hidden">
+        <div
+            onDragOver={event => { event.preventDefault(); setDragOverKey('review') }}
+            onDragLeave={() => setDragOverKey(current => current === 'review' ? null : current)}
+            onDrop={dropOntoLabel('toValidate')}
+            className={`card overflow-hidden transition-shadow ${
+                dragOverKey === 'review' ? 'ring-2 ring-brand-500 shadow-raised' : ''
+            }`}
+        >
             <div className="flex items-center justify-between px-3 h-11 border-b border-line">
                 <h2 className="text-sm font-bold text-ink">
                     Por validar
@@ -589,7 +649,16 @@ export default function MyWorkView() {
     )
 
     const doneColumn = (
-        <FinishedTasks userId={personId} now={now} timezone={timezone} rowProps={rowProps} />
+        <FinishedTasks
+            userId={personId}
+            now={now}
+            timezone={timezone}
+            rowProps={rowProps}
+            isDropTarget={dragOverKey === 'done'}
+            onDragOver={event => { event.preventDefault(); setDragOverKey('done') }}
+            onDragLeave={() => setDragOverKey(current => current === 'done' ? null : current)}
+            onDrop={dropOntoLabel('done')}
+        />
     )
 
     return (

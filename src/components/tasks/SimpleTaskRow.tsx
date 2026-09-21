@@ -153,6 +153,10 @@ export default function SimpleTaskRow({
             draggable={canEdit}
             onDragStart={event => {
                 event.dataTransfer.setData('application/x-uptask-plan-task', task._id)
+                // Con esto, quien recibe el drop sabe si venía de Finalizados
+                // sin tener que ir a buscarla: una tarea Listo no aparece en
+                // las listas abiertas, así que no se la puede encontrar ahí.
+                event.dataTransfer.setData('application/x-uptask-plan-label', label)
                 event.dataTransfer.effectAllowed = 'move'
             }}
             style={colorTag ? { backgroundColor: COLOR_WASH[colorTag] } : undefined}
