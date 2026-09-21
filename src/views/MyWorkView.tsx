@@ -802,18 +802,20 @@ export default function MyWorkView() {
                 </div>
 
                 {/* En pantallas anchas, las columnas se reparten el ancho
-                    disponible sin scroll; en una laptop más angosta no caben
-                    apretadas, así que se deja el ancho mínimo de cada una y
-                    aparece scroll horizontal, con su propia barra visible
-                    para que se note que hay más a la derecha —además del
-                    gesto de dos dedos en el trackpad—. Pendientes queda fija
-                    a la izquierda y Por validar + Finalizados fijas a la
-                    derecha: no se pierden de vista al deslizar entre los
-                    días. `items-start` evita que un día vacío se estire al
-                    alto del más lleno: cada tarjeta mide lo que pesa su
-                    propio contenido. */}
+                    disponible; en una laptop más angosta no caben apretadas,
+                    así que se deja el ancho mínimo de cada una y aparece
+                    scroll horizontal. La barra se ve siempre —`scroll`, no
+                    `auto`— aunque en ese momento entren todas las columnas
+                    sin necesidad de deslizar: así se nota en cualquier
+                    pantalla de escritorio que esta fila se puede correr,
+                    quepa o no todo de entrada. Pendientes queda fija a la
+                    izquierda y Por validar + Finalizados fijas a la derecha:
+                    no se pierden de vista al deslizar entre los días.
+                    `items-start` evita que un día vacío se estire al alto
+                    del más lleno: cada tarjeta mide lo que pesa su propio
+                    contenido. */}
                 <div className="flex flex-col lg:flex-row lg:items-start gap-3
-                    lg:overflow-x-auto lg:pb-2">
+                    lg:overflow-x-scroll lg:pb-2">
                     <div className="hidden lg:flex lg:flex-col lg:flex-1 lg:min-w-[15rem]
                         lg:sticky lg:left-0 lg:z-10 lg:bg-canvas">
                         {pendingColumn}
