@@ -213,7 +213,14 @@ export default function QuickCreateTask({
         <div
             ref={boxRef}
             onKeyDown={onKeyDown}
-            className="rounded-md border border-brand-300 bg-surface shadow-raised p-2 space-y-2"
+            className={dense
+                // En una celda del día, el formulario es una tarjeta chica,
+                // igual que cualquier otra del sistema (mismo fondo blanco,
+                // mismo borde, mismo card) — no un recuadro aparte con fondo
+                // propio.
+                ? 'card p-2 space-y-1.5'
+                : 'rounded-md border border-brand-300 bg-surface shadow-raised p-2 space-y-2'
+            }
         >
             <input
                 ref={nameRef}
@@ -240,9 +247,12 @@ export default function QuickCreateTask({
                 </label>
             )}
 
-            {/* Filas con icono, como en el calendario: lo esencial a la vista */}
+            {/* Filas con icono, como en el calendario: lo esencial a la vista.
+                En una celda (dense) el contexto ya trae responsable y área
+                resueltos, así que mostrarlas de nuevo solo agranda la tarjeta
+                sin aportar nada nuevo. */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                {isManager && members && members.length > 0 && (
+                {!dense && isManager && members && members.length > 0 && (
                     <label className="flex items-center gap-1.5" title="Responsable">
                         <UserIcon className="w-4 h-4 text-ink-subtle shrink-0" />
                         <select
@@ -276,7 +286,7 @@ export default function QuickCreateTask({
                     </label>
                 )}
 
-                {brands && brands.length > 0 && (
+                {!dense && brands && brands.length > 0 && (
                     <label className="flex items-center gap-1.5" title="Área">
                         <TagIcon className="w-4 h-4 text-ink-subtle shrink-0" />
                         <select
@@ -337,7 +347,7 @@ export default function QuickCreateTask({
                 )}
             </div>
 
-            <div className="flex items-center gap-2 pt-0.5">
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
                 <Button
                     type="button"
                     variant="primary"
@@ -351,7 +361,7 @@ export default function QuickCreateTask({
                     Cancelar
                 </Button>
 
-                {!showDetail && (
+                {!dense && !showDetail && (
                     <button
                         type="button"
                         onClick={() => setShowDetail(true)}
@@ -361,9 +371,13 @@ export default function QuickCreateTask({
                     </button>
                 )}
 
-                <span className="ml-auto text-2xs text-ink-subtle hidden sm:block">
-                    Enter guarda · Esc descarta
-                </span>
+                {/* En una celda angosta, esta pista no cabe sin forzar el
+                    ancho de la tarjeta; se pierde ahí, no en el uso normal. */}
+                {!dense && (
+                    <span className="ml-auto text-2xs text-ink-subtle hidden sm:block">
+                        Enter guarda · Esc descarta
+                    </span>
+                )}
             </div>
 
             {assignee && assignee !== currentUser?._id && members && (

@@ -40,10 +40,10 @@ type Props = {
     /** Si se puede mover a un día de la semana desde el menú de opciones.
      *  En "Finalizados" no aplica —una tarea ya cerrada no se planifica—. */
     showDayOptions?: boolean
-    /** Solo para tareas "Por validar": quién espera aprobarla y desde
-     *  cuándo, ya formateado —no todas las filas la llevan, solo aparece en
-     *  la columna "Por validar". */
-    reviewInfo?: { approverName: string | null, elapsed: string }
+    /** Marca que la tarea está en revisión: solo la traen las filas de la
+     *  columna "Por validar" —la etiqueta ya lo dice, esto solo habilita el
+     *  bloque de Aprobar / Solicitar ajustes. */
+    reviewInfo?: boolean
     /** La aprobadora asignada o la encargada, no quien la hizo: aunque
      *  `canEdit` sea cierto para su dueña, resolver la revisión no le
      *  corresponde a ella. */
@@ -355,14 +355,9 @@ export default function SimpleTaskRow({
                     )}
                 </div>
 
-                {label === 'toValidate' && reviewInfo && (
+                {label === 'toValidate' && reviewInfo && canResolveReview && (
                     <div className="mt-2 pt-2 border-t border-line/70">
-                        <p className="text-2xs text-ink-subtle">
-                            {reviewInfo.approverName ? `Espera de ${reviewInfo.approverName}` : 'Espera aprobación'}
-                            {' · '}{reviewInfo.elapsed}
-                        </p>
-                        {canResolveReview && (
-                            adjusting ? (
+                        {adjusting ? (
                                 <div className="flex items-center gap-1.5 mt-1.5">
                                     <input
                                         value={adjustNote}
@@ -413,7 +408,6 @@ export default function SimpleTaskRow({
                                         Solicitar ajustes
                                     </button>
                                 </div>
-                            )
                         )}
                     </div>
                 )}

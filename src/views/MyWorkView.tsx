@@ -96,15 +96,6 @@ function bucketOf(task: Task, now: Date, timezone: string): FinishedBucket {
     return 'older'
 }
 
-/** "hace 3 días": una aproximación en días, no un cronómetro exacto — de
- *  sobra para saber si algo lleva esperando mucho o poco. */
-function formatElapsed(requestedAt: string | null | undefined, now: Date): string {
-    if (!requestedAt) return ''
-    const days = Math.floor((now.getTime() - new Date(requestedAt).getTime()) / 86400000)
-    if (days <= 0) return 'hoy'
-    return days === 1 ? 'hace 1 día' : `hace ${days} días`
-}
-
 type RowProps = Omit<ComponentProps<typeof SimpleTaskRow>, 'task'>
 
 function FinishedTasks({ userId, now, timezone, rowProps }: {
@@ -179,7 +170,7 @@ function FinishedTasks({ userId, now, timezone, rowProps }: {
                             hint={query ? undefined : 'Lo que vayas marcando como hecho quedará aquí.'}
                         />
                     ) : (
-                        <div className={`max-h-96 overflow-y-auto ${isFetching ? 'opacity-50' : ''}`}>
+                        <div className={`max-h-[70vh] overflow-y-auto scrollbar-none ${isFetching ? 'opacity-50' : ''}`}>
                             {groups ? (
                                 // Agrupado por semana: de un vistazo, qué se
                                 // cerró esta semana y qué quedó de la anterior.
@@ -464,10 +455,9 @@ export default function MyWorkView() {
             busy: changingStatus || requestingReview || resolvingReview,
             canEdit: canEditTask(task, currentUser),
             canHide: canHideTask(task, currentUser),
-            reviewInfo: {
-                approverName: approver?.name ?? null,
-                elapsed: formatElapsed(task.review?.requestedAt, now)
-            },
+            // Solo importa que exista: la etiqueta ya dice "Por validar",
+            // no hace falta repetir cuánto lleva esperando ni quién aprueba.
+            reviewInfo: !!task.review?.needed,
             canResolveReview,
             onApprove: (taskId: string) => resolveReview({ taskId, approved: true }),
             onRequestChanges: (taskId: string, note: string) =>
@@ -564,7 +554,7 @@ export default function MyWorkView() {
                     hint={backlog.length === 0 ? 'Todo lo que tienes está en tu semana o ya está cerrado.' : undefined}
                 />
             ) : (
-                <ul className="divide-y divide-line max-h-96 overflow-y-auto">
+                <ul className="divide-y divide-line max-h-[70vh] overflow-y-auto scrollbar-none">
                     {visibleBacklog.map(task => (
                         <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
                     ))}
@@ -589,7 +579,7 @@ export default function MyWorkView() {
                     hint="Lo que se envíe a validar aparece aquí, sin importar la semana."
                 />
             ) : (
-                <ul className="divide-y divide-line max-h-96 overflow-y-auto">
+                <ul className="divide-y divide-line max-h-[70vh] overflow-y-auto scrollbar-none">
                     {reviewTasks.map(task => (
                         <SimpleTaskRow key={task._id} task={task} showDayOptions={false} {...rowProps(task)} />
                     ))}
@@ -673,7 +663,24 @@ export default function MyWorkView() {
                     })}
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+                {/* En pantallas anchas, las columnas se reparten el ancho
+                    disponible sin scroll; en una laptop más angosta no caben
+                    apretadas, así que se deja el ancho mínimo de cada una y
+                    aparece scroll horizontal, que en el trackpad se recorre
+                    con el gesto de dos dedos, como cualquier swipe —sin barra
+                    visible, para no ensuciar la fila—. Pendientes queda fija
+                    a la izquierda y Por validar + Finalizados fijas a la
+                    derecha: no se pierden de vista al deslizar entre los
+                    días. `items-start` evita que un día vacío se estire al
+                    alto del más lleno: cada tarjeta mide lo que pesa su
+                    propio contenido. */}
+                <div className="flex flex-col lg:flex-row lg:items-start gap-3
+                    lg:overflow-x-auto lg:pb-1 scrollbar-none">
+                    <div className="hidden lg:flex lg:flex-col lg:flex-1 lg:min-w-[15rem]
+                        lg:sticky lg:left-0 lg:z-10 lg:bg-canvas">
+                        {pendingColumn}
+                    </div>
+
                     {weekDays.map(day => {
                         const dayTasks = tasksByDay.get(day.key) ?? []
                         const isDropTarget = dragOverKey === day.key
@@ -683,7 +690,8 @@ export default function MyWorkView() {
                                 onDragOver={event => { event.preventDefault(); setDragOverKey(day.key) }}
                                 onDragLeave={() => setDragOverKey(current => current === day.key ? null : current)}
                                 onDrop={dropOnto(day.key)}
-                                className={`card overflow-hidden flex-col transition-shadow ${
+                                className={`card overflow-hidden flex-col transition-shadow
+                                    lg:flex-1 lg:min-w-[12rem] ${
                                     selectedDay === day.key ? 'flex' : 'hidden lg:flex'
                                 } ${day.isToday ? 'ring-1 ring-brand-300' : ''} ${
                                     isDropTarget ? 'ring-2 ring-brand-500 shadow-raised' : ''
@@ -704,16 +712,18 @@ export default function MyWorkView() {
                                 </div>
 
                                 {dayTasks.length === 0 && isDropTarget ? (
-                                    <p className="px-3 py-4 text-2xs text-center flex-1 text-brand-600 font-semibold">
+                                    <p className="px-3 py-4 min-h-[4rem] flex items-center justify-center
+                                        text-2xs text-center text-brand-600 font-semibold">
                                         Suelta aquí
                                     </p>
                                 ) : (
                                     <>
                                         {dayTasks.length > 0 && (
-                                            // Con muchos pendientes en un solo día, la columna
-                                            // no estira toda la pantalla: se desplaza por dentro,
-                                            // igual que ya hace "Finalizados".
-                                            <ul className="divide-y divide-line max-h-96 overflow-y-auto">
+                                            // Un día con muchos pendientes no empuja el resto
+                                            // de la página hacia abajo: se desplaza por dentro,
+                                            // con un tope relativo al alto de pantalla en vez de
+                                            // un número fijo de píxeles.
+                                            <ul className="divide-y divide-line max-h-[70vh] overflow-y-auto scrollbar-none">
                                                 {dayTasks.map(task => (
                                                     <SimpleTaskRow
                                                         key={task._id}
@@ -724,8 +734,10 @@ export default function MyWorkView() {
                                             </ul>
                                         )}
                                         {/* Un día vacío invita a escribir, no solo a
-                                            recibir lo que se arrastre. */}
-                                        <div className={`px-2 py-1.5 ${dayTasks.length > 0 ? 'border-t border-line' : 'flex-1 flex items-center'}`}>
+                                            recibir lo que se arrastre. Va justo debajo
+                                            del encabezado, sin estirarse al alto que le
+                                            da el día con más pendientes. */}
+                                        <div className={`px-2 py-1.5 ${dayTasks.length > 0 ? 'border-t border-line' : ''}`}>
                                             <QuickCreateTask
                                                 label="Añadir"
                                                 dense
@@ -738,13 +750,21 @@ export default function MyWorkView() {
                             </div>
                         )
                     })}
+
+                    {/* Finalizados, junto a Viernes, y Por validar después:
+                        así se ve la semana completa y lo ya cerrado en la
+                        misma pantalla, sin bajar. Se deslizan con los días
+                        —solo Pendientes queda fija—; en mobile se ven más
+                        abajo, por pestaña. */}
+                    <div className="hidden lg:flex lg:flex-col lg:flex-1 lg:min-w-[15rem]">{doneColumn}</div>
+                    <div className="hidden lg:flex lg:flex-col lg:flex-1 lg:min-w-[13rem]">{reviewColumn}</div>
                 </div>
             </section>
 
-            {/* Pendientes / Por validar / Finalizados: en desktop, tres
-                columnas a la vista siempre, con más ancho para Pendientes;
-                en mobile no caben sin apretarlas ni generar scroll
-                horizontal, así que se ven de a una por pestaña. */}
+            {/* Pendientes / Por validar / Finalizados: en desktop ya se ven
+                arriba, fijas a los costados de "Mi semana"; esta sección es
+                solo para mobile, donde no caben sin apretarlas ni generar
+                scroll horizontal, así que se ven de a una por pestaña. */}
             <div
                 role="group"
                 aria-label="Sección"
@@ -770,10 +790,12 @@ export default function MyWorkView() {
                 ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr] gap-3 items-start">
-                <div className={activeTab === 'pending' ? 'block' : 'hidden lg:block'}>{pendingColumn}</div>
-                <div className={activeTab === 'review' ? 'block' : 'hidden lg:block'}>{reviewColumn}</div>
-                <div className={activeTab === 'done' ? 'block' : 'hidden lg:block'}>{doneColumn}</div>
+            {/* En desktop las tres ya se ven arriba: esto es solo para la
+                pestaña activa en mobile. */}
+            <div className="grid grid-cols-1 gap-3 items-start lg:hidden">
+                <div className={activeTab === 'pending' ? 'block' : 'hidden'}>{pendingColumn}</div>
+                <div className={activeTab === 'review' ? 'block' : 'hidden'}>{reviewColumn}</div>
+                <div className={activeTab === 'done' ? 'block' : 'hidden'}>{doneColumn}</div>
             </div>
         </>
     )

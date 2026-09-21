@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckIcon, EllipsisHorizontalIcon } from '@heroicons/react/24/outline'
+import { CheckIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline'
 import { PlanDay } from './PlanDayPicker'
 
 /** Acciones secundarias de un pendiente: mover a un día, ocultar, eliminar.
@@ -80,7 +80,7 @@ export default function TaskActionsMenu({
                     hover:bg-slate-200 transition-colors
                     focus:outline-none focus:ring-2 focus:ring-brand-400"
             >
-                <EllipsisHorizontalIcon className="w-4 h-4" />
+                <EllipsisVerticalIcon className="w-4 h-4" />
             </button>
 
             {open && position && createPortal(

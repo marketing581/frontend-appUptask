@@ -46,6 +46,16 @@
         @apply bg-surface border border-line rounded-lg shadow-card;
     }
 
+    /* Sigue siendo desplazable con el trackpad o la rueda; solo se le quita
+     * la barra visible donde estorba más de lo que ayuda. */
+    .scrollbar-none {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+    .scrollbar-none::-webkit-scrollbar {
+        display: none;
+    }
+
     /* Etiqueta de sección: pequeña, en mayúsculas, sin gritar. */
     .eyebrow {
         @apply text-2xs font-semibold uppercase tracking-wider text-ink-subtle;

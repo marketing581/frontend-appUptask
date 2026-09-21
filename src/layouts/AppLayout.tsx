@@ -6,6 +6,8 @@ import 'react-toastify/dist/ReactToastify.css'
 import {
     ArrowRightOnRectangleIcon,
     Bars3Icon,
+    ChevronDoubleLeftIcon,
+    ChevronDoubleRightIcon,
     Cog6ToothIcon,
     XMarkIcon
 } from '@heroicons/react/24/outline'
@@ -15,9 +17,10 @@ import { NAV_SECTIONS, NavItem } from './navigation'
 import { Avatar } from '@/components/ui'
 import { REPORTS_OWNER_ID } from '@/utils/reportsAccess'
 
-function NavRow({ item, count, onNavigate }: {
+function NavRow({ item, count, collapsed, onNavigate }: {
     item: NavItem
     count: number
+    collapsed?: boolean
     onNavigate?: () => void
 }) {
     const isAlert = item.badge === 'overdue'
@@ -28,10 +31,12 @@ function NavRow({ item, count, onNavigate }: {
                 to={item.to}
                 end={item.end}
                 onClick={onNavigate}
-                title={item.hint}
+                // Con el nombre oculto, el título es la única forma de saber
+                // qué ítem es sin volver a expandir el menú.
+                title={collapsed ? item.label : item.hint}
                 className={({ isActive }) =>
-                    `group flex items-center gap-2.5 pl-3 pr-2 h-9 rounded text-sm font-medium
-                    transition-colors relative ${
+                    `group flex items-center h-9 rounded text-sm font-medium
+                    transition-colors relative ${collapsed ? 'justify-center px-0' : 'gap-2.5 pl-3 pr-2'} ${
                         isActive
                             ? 'bg-brand-50 text-brand-700 font-semibold'
                             : 'text-ink-muted hover:bg-slate-100 hover:text-ink'
@@ -46,10 +51,21 @@ function NavRow({ item, count, onNavigate }: {
                             className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full
                                 ${isActive ? 'bg-brand-600' : 'bg-transparent'}`}
                         />
-                        <item.icon className="w-[18px] h-[18px] shrink-0" />
-                        <span className="truncate">{item.label}</span>
+                        <span className="relative shrink-0">
+                            <item.icon className="w-[18px] h-[18px]" />
+                            {collapsed && count > 0 && (
+                                <span
+                                    aria-hidden
+                                    className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${
+                                        isAlert ? 'bg-red-600' : 'bg-amber-500'
+                                    }`}
+                                />
+                            )}
+                        </span>
 
-                        {count > 0 && (
+                        {!collapsed && <span className="truncate">{item.label}</span>}
+
+                        {!collapsed && count > 0 && (
                             <span
                                 title={isAlert
                                     ? `${count} vencido${count === 1 ? '' : 's'}`
@@ -71,11 +87,15 @@ function NavRow({ item, count, onNavigate }: {
     )
 }
 
-function SidebarContent({ onNavigate, name, role, userId }: {
+function SidebarContent({ onNavigate, name, role, userId, collapsed, onToggleCollapse }: {
     onNavigate?: () => void
     name: string
     role?: string
     userId: string
+    collapsed?: boolean
+    /** Solo la tiene el sidebar fijo de desktop: el cajón de mobile no
+     *  colapsa, ya se cierra solo. */
+    onToggleCollapse?: () => void
 }) {
     const queryClient = useQueryClient()
     const badges = useNavBadges()
@@ -91,31 +111,62 @@ function SidebarContent({ onNavigate, name, role, userId }: {
 
     return (
         <div className="flex flex-col h-full">
-            <Link
-                to="/"
-                onClick={onNavigate}
-                className="flex items-center gap-2.5 px-3 h-14 shrink-0 border-b border-line"
-            >
-                <span className="w-7 h-7 rounded-md bg-brand-600 text-white grid place-content-center
-                    font-bold text-sm shrink-0">U</span>
-                <span className="min-w-0">
-                    <span className="block text-sm font-bold text-ink leading-tight truncate">UpTask</span>
-                    <span className="block text-2xs text-ink-subtle leading-tight truncate">
-                        Equipo de Marketing
-                    </span>
-                </span>
-            </Link>
+            <div className="flex items-center h-14 shrink-0 border-b border-line">
+                <Link
+                    to="/"
+                    onClick={onNavigate}
+                    className={`flex items-center gap-2.5 min-w-0 flex-1 h-full ${collapsed ? 'justify-center' : 'px-3'}`}
+                >
+                    <span className="w-7 h-7 rounded-md bg-brand-600 text-white grid place-content-center
+                        font-bold text-sm shrink-0">U</span>
+                    {!collapsed && (
+                        <span className="min-w-0">
+                            <span className="block text-sm font-bold text-ink leading-tight truncate">UpTask</span>
+                            <span className="block text-2xs text-ink-subtle leading-tight truncate">
+                                Equipo de Marketing
+                            </span>
+                        </span>
+                    )}
+                </Link>
+
+                {onToggleCollapse && !collapsed && (
+                    <button
+                        type="button"
+                        onClick={onToggleCollapse}
+                        title="Contraer menú"
+                        aria-label="Contraer menú"
+                        className="w-8 h-8 mr-1.5 shrink-0 grid place-content-center rounded
+                            text-ink-muted hover:bg-slate-100 hover:text-ink"
+                    >
+                        <ChevronDoubleLeftIcon className="w-4 h-4" />
+                    </button>
+                )}
+            </div>
+
+            {onToggleCollapse && collapsed && (
+                <button
+                    type="button"
+                    onClick={onToggleCollapse}
+                    title="Expandir menú"
+                    aria-label="Expandir menú"
+                    className="w-8 h-8 mx-auto mt-1.5 shrink-0 grid place-content-center rounded
+                        text-ink-muted hover:bg-slate-100 hover:text-ink"
+                >
+                    <ChevronDoubleRightIcon className="w-4 h-4" />
+                </button>
+            )}
 
             <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label="Navegación principal">
                 {sections.map(section => (
                     <div key={section.heading}>
-                        <p className="eyebrow px-2 mb-1.5">{section.heading}</p>
+                        {!collapsed && <p className="eyebrow px-2 mb-1.5">{section.heading}</p>}
                         <ul className="space-y-0.5">
                             {section.items.map(item => (
                                 <NavRow
                                     key={item.to}
                                     item={item}
                                     count={item.badge ? badges[item.badge] : 0}
+                                    collapsed={collapsed}
                                     onNavigate={onNavigate}
                                 />
                             ))}
@@ -125,23 +176,28 @@ function SidebarContent({ onNavigate, name, role, userId }: {
             </nav>
 
             <div className="border-t border-line p-2 shrink-0">
-                <div className="flex items-center gap-2 px-1 py-1.5">
-                    <Avatar name={name} size="md" />
-                    <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-ink truncate leading-tight">{name}</p>
-                        <p className="text-2xs text-ink-subtle leading-tight">
-                            {role === 'manager' ? 'Encargada' : 'Integrante'}
-                        </p>
-                    </div>
+                <div className={`flex items-center gap-2 px-1 py-1.5 ${collapsed ? 'justify-center' : ''}`}>
+                    <Avatar name={name} size="md" title={collapsed ? name : undefined} />
+                    {!collapsed && (
+                        <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-ink truncate leading-tight">{name}</p>
+                            <p className="text-2xs text-ink-subtle leading-tight">
+                                {role === 'manager' ? 'Encargada' : 'Integrante'}
+                            </p>
+                        </div>
+                    )}
                 </div>
-                <div className="flex items-center gap-1 mt-1">
+                <div className={`flex items-center gap-1 mt-1 ${collapsed ? 'flex-col' : ''}`}>
                     <Link
                         to="/profile"
                         onClick={onNavigate}
-                        className="flex-1 flex items-center gap-1.5 h-7 px-2 rounded
-                            text-xs font-medium text-ink-muted hover:bg-slate-100 hover:text-ink"
+                        title="Mi perfil"
+                        className={`flex items-center gap-1.5 h-7 rounded
+                            text-xs font-medium text-ink-muted hover:bg-slate-100 hover:text-ink ${
+                            collapsed ? 'w-7 justify-center' : 'flex-1 px-2'
+                        }`}
                     >
-                        <Cog6ToothIcon className="w-4 h-4 shrink-0" /> Mi perfil
+                        <Cog6ToothIcon className="w-4 h-4 shrink-0" /> {!collapsed && 'Mi perfil'}
                     </Link>
                     <button
                         type="button"
@@ -176,8 +232,19 @@ function useCurrentSection() {
 export default function AppLayout() {
     const { data, isError, isLoading } = useAuth()
     const [drawerOpen, setDrawerOpen] = useState(false)
+    // Preferencia de esta pantalla, no del perfil: se guarda localmente para
+    // que no vuelva a expandirse sola en cada recarga.
+    const [collapsed, setCollapsed] = useState(() => localStorage.getItem('SIDEBAR_COLLAPSED') === '1')
     const currentSection = useCurrentSection()
     const { pathname } = useLocation()
+
+    const toggleCollapsed = () => {
+        setCollapsed(current => {
+            const next = !current
+            localStorage.setItem('SIDEBAR_COLLAPSED', next ? '1' : '0')
+            return next
+        })
+    }
 
     // Navegar cierra el cajón: dejarlo abierto tapando la vista es un clásico.
     useEffect(() => { setDrawerOpen(false) }, [pathname])
@@ -203,10 +270,16 @@ export default function AppLayout() {
     if (!data) return null
 
     return (
-        <div className="min-h-screen lg:pl-sidebar">
-            <aside className="hidden lg:flex fixed inset-y-0 left-0 w-sidebar bg-surface
-                border-r border-line z-30">
-                <SidebarContent name={data.name} role={data.role} userId={data._id} />
+        <div className={`min-h-screen transition-[padding] ${collapsed ? 'lg:pl-sidebar-collapsed' : 'lg:pl-sidebar'}`}>
+            <aside className={`hidden lg:flex fixed inset-y-0 left-0 bg-surface
+                border-r border-line z-30 transition-[width] ${collapsed ? 'w-sidebar-collapsed' : 'w-sidebar'}`}>
+                <SidebarContent
+                    name={data.name}
+                    role={data.role}
+                    userId={data._id}
+                    collapsed={collapsed}
+                    onToggleCollapse={toggleCollapsed}
+                />
             </aside>
 
             <header className="lg:hidden sticky top-0 z-20 h-14 bg-surface border-b border-line
