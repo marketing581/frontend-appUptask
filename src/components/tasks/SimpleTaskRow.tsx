@@ -57,12 +57,24 @@ type Props = {
     onSetDay: (taskId: string, dayKey: string | null) => void
     onPatch: (taskId: string, formData: Record<string, unknown>) => void
     onDelete: (taskId: string) => void
+    /** Selección múltiple con el mouse, como en el Finder: Cmd/Ctrl+clic
+     *  suma o quita esta fila; Shift+clic selecciona el rango desde la
+     *  última elegida. Sirve para mover de un tirón dos o más pendientes al
+     *  mismo sitio, no solo de a uno. */
+    selected?: boolean
+    onSelectClick?: (mode: 'toggle' | 'range') => void
+    /** Todo lo seleccionado ahora mismo, con la etiqueta que tenía cada una
+     *  al elegirla —hace falta para decidir si hay que reabrirla al soltar,
+     *  sin ir a buscarla otra vez—. Si esta fila está seleccionada y hay más
+     *  de una, arrastrar cualquiera de las seleccionadas mueve a todas. */
+    selection?: Map<string, TaskLabel>
 }
 
 export default function SimpleTaskRow({
     task, weekDays, todayKey, canEdit, canHide, busy, showDayOptions = true,
     reviewInfo, canResolveReview, onApprove, onRequestChanges,
-    onSetLabel, onSetDay, onPatch, onDelete
+    onSetLabel, onSetDay, onPatch, onDelete,
+    selected, onSelectClick, selection
 }: Props) {
     const [adjusting, setAdjusting] = useState(false)
     const [adjustNote, setAdjustNote] = useState('')
@@ -152,17 +164,40 @@ export default function SimpleTaskRow({
         <li
             draggable={canEdit}
             onDragStart={event => {
-                event.dataTransfer.setData('application/x-uptask-plan-task', task._id)
-                // Con esto, quien recibe el drop sabe si venía de Finalizados
-                // sin tener que ir a buscarla: una tarea Listo no aparece en
-                // las listas abiertas, así que no se la puede encontrar ahí.
-                event.dataTransfer.setData('application/x-uptask-plan-label', label)
+                // Arrastrar una fila seleccionada, habiendo más de una
+                // elegida, mueve a todas juntas; cualquier otro caso arrastra
+                // solo esta, como siempre.
+                const items = selected && selection && selection.size > 1
+                    ? Array.from(selection, ([id, itemLabel]) => ({ id, label: itemLabel }))
+                    : [{ id: task._id, label }]
+                event.dataTransfer.setData('application/x-uptask-plan-items', JSON.stringify(items))
                 event.dataTransfer.effectAllowed = 'move'
+            }}
+            // Cmd/Ctrl+clic o Shift+clic seleccionan en vez de hacer lo que
+            // haría un clic normal en lo que se tocó —abrir el detalle,
+            // cambiar el estado, etc.—; por eso se intercepta antes de que
+            // el clic llegue a esos controles, no después.
+            onMouseDownCapture={event => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey) event.preventDefault()
+            }}
+            onClickCapture={event => {
+                if (!onSelectClick) return
+                if (event.metaKey || event.ctrlKey) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onSelectClick('toggle')
+                } else if (event.shiftKey) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onSelectClick('range')
+                }
             }}
             style={colorTag ? { backgroundColor: COLOR_WASH[colorTag] } : undefined}
             className={`group flex items-start gap-2 px-3 py-2 transition-all ${
                 colorTag ? 'hover:brightness-[0.97]' : 'hover:bg-surface-sunken'
-            } ${canEdit ? 'cursor-grab active:cursor-grabbing' : ''}`}
+            } ${canEdit ? 'cursor-grab active:cursor-grabbing' : ''} ${
+                selected ? 'ring-2 ring-inset ring-brand-500' : ''
+            }`}
         >
             <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-1.5">

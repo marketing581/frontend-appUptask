@@ -99,7 +99,8 @@ function bucketOf(task: Task, now: Date, timezone: string): FinishedBucket {
 type RowProps = Omit<ComponentProps<typeof SimpleTaskRow>, 'task'>
 
 function FinishedTasks({ userId, now, timezone, rowProps, onDragOver, onDragLeave, onDrop, isDropTarget }: {
-    userId?: string, now: Date, timezone: string, rowProps: (task: Task) => RowProps
+    userId?: string, now: Date, timezone: string
+    rowProps: (task: Task, listTasks?: Task[]) => RowProps
     onDragOver: (event: React.DragEvent) => void
     onDragLeave: () => void
     onDrop: (event: React.DragEvent) => void
@@ -199,7 +200,7 @@ function FinishedTasks({ userId, now, timezone, rowProps, onDragOver, onDragLeav
                                                     key={task._id}
                                                     task={task}
                                                     showDayOptions={false}
-                                                    {...rowProps(task)}
+                                                    {...rowProps(task, group.tasks)}
                                                 />
                                             ))}
                                         </ul>
@@ -212,7 +213,7 @@ function FinishedTasks({ userId, now, timezone, rowProps, onDragOver, onDragLeav
                                             key={task._id}
                                             task={task}
                                             showDayOptions={false}
-                                            {...rowProps(task)}
+                                            {...rowProps(task, tasks)}
                                         />
                                     ))}
                                 </ul>
@@ -308,27 +309,72 @@ export default function MyWorkView() {
      *  resaltado; el `<select>` de cada fila hace exactamente lo mismo sin
      *  necesidad de arrastrar, para quien prefiera tocar en vez de arrastrar. */
     const [dragOverKey, setDragOverKey] = useState<string | null>(null)
-    const PLAN_MIME = 'application/x-uptask-plan-task'
-    // Va aparte del id: una tarea Listo ya no está en las listas abiertas, así
-    // que no hay dónde buscarla para saber de dónde viene. Esto lo dice sin
-    // necesidad de encontrarla.
-    const LABEL_MIME = 'application/x-uptask-plan-label'
+    const ITEMS_MIME = 'application/x-uptask-plan-items'
+
+    /** Lo elegido para mover de un tirón, con la etiqueta que tenía cada una
+     *  al elegirla —hace falta para saber si hay que reabrirla al soltar, sin
+     *  ir a buscarla otra vez—. Arrastrar cualquiera de las seleccionadas
+     *  mueve a todas; arrastrar una que no está seleccionada mueve solo esa. */
+    const [selection, setSelection] = useState<Map<string, TaskLabel>>(new Map())
+    // La última fila donde se hizo Cmd/Ctrl+clic o Shift+clic: ancla del
+    // rango cuando se vuelve a usar Shift.
+    const [lastSelectedId, setLastSelectedId] = useState<string | null>(null)
+
+    const toggleSelected = (taskId: string, taskLabel: TaskLabel) => {
+        setSelection(current => {
+            const next = new Map(current)
+            if (next.has(taskId)) next.delete(taskId); else next.set(taskId, taskLabel)
+            return next
+        })
+        setLastSelectedId(taskId)
+    }
+
+    /** Shift+clic entre la última fila elegida y esta, dentro de la misma
+     *  lista visible —Pendientes, un día, Por validar o cada grupo de
+     *  Finalizados—: seleccionar entre columnas distintas no tiene un rango
+     *  que tenga sentido, así que ahí se cae a elegir solo esta fila. */
+    const selectRange = (task: Task, listTasks: Task[]) => {
+        const ids = listTasks.map(item => item._id)
+        const anchor = lastSelectedId ? ids.indexOf(lastSelectedId) : -1
+        const target = ids.indexOf(task._id)
+        if (anchor === -1 || target === -1) {
+            toggleSelected(task._id, getTaskLabel(task))
+            return
+        }
+        const [from, to] = anchor < target ? [anchor, target] : [target, anchor]
+        setSelection(current => {
+            const next = new Map(current)
+            for (let i = from; i <= to; i++) next.set(ids[i], getTaskLabel(listTasks[i]))
+            return next
+        })
+        setLastSelectedId(task._id)
+    }
+
+    const readDraggedItems = (event: React.DragEvent): { id: string, label: TaskLabel }[] => {
+        try {
+            return JSON.parse(event.dataTransfer.getData(ITEMS_MIME) || '[]')
+        } catch {
+            return []
+        }
+    }
 
     const dropOnto = (targetKey: string | null) => (event: React.DragEvent) => {
         event.preventDefault()
-        const taskId = event.dataTransfer.getData(PLAN_MIME)
+        const items = readDraggedItems(event)
         setDragOverKey(null)
-        if (!taskId) return
+        setSelection(new Map())
 
-        const fromLabel = event.dataTransfer.getData(LABEL_MIME) as TaskLabel
-        if (fromLabel === 'done') {
-            // Sacarla de Finalizados la reabre: puede que haya quedado algo
-            // por cerrar. Primero se reabre y, ya reabierta, se programa.
-            setStatus({ taskId, status: 'pending' }, {
-                onSuccess: () => patchTask({ taskId, formData: { plannedDate: targetKey } })
-            })
-        } else {
-            patchTask({ taskId, formData: { plannedDate: targetKey } })
+        for (const { id, label: fromLabel } of items) {
+            if (fromLabel === 'done') {
+                // Sacarla de Finalizados la reabre: puede que haya quedado
+                // algo por cerrar. Primero se reabre y, ya reabierta, se
+                // programa.
+                setStatus({ taskId: id, status: 'pending' }, {
+                    onSuccess: () => patchTask({ taskId: id, formData: { plannedDate: targetKey } })
+                })
+            } else {
+                patchTask({ taskId: id, formData: { plannedDate: targetKey } })
+            }
         }
     }
 
@@ -337,25 +383,26 @@ export default function MyWorkView() {
      *  camino, solo que arrastrando. */
     const dropOntoLabel = (label: TaskLabel) => (event: React.DragEvent) => {
         event.preventDefault()
-        const taskId = event.dataTransfer.getData(PLAN_MIME)
+        const items = readDraggedItems(event)
         setDragOverKey(null)
-        if (!taskId) return
+        setSelection(new Map())
 
-        const fromLabel = event.dataTransfer.getData(LABEL_MIME) as TaskLabel
-        if (label === 'toValidate') {
-            if (fromLabel === 'done') {
-                // Una tarea Listo no puede pedir validación directo —el
-                // servidor lo rechaza—: hay que reabrirla primero.
-                setStatus({ taskId, status: 'inProgress' }, {
-                    onSuccess: () => requestReview({ taskId })
-                })
+        for (const { id, label: fromLabel } of items) {
+            if (label === 'toValidate') {
+                if (fromLabel === 'done') {
+                    // Una tarea Listo no puede pedir validación directo —el
+                    // servidor lo rechaza—: hay que reabrirla primero.
+                    setStatus({ taskId: id, status: 'inProgress' }, {
+                        onSuccess: () => requestReview({ taskId: id })
+                    })
+                } else {
+                    requestReview({ taskId: id })
+                }
+            } else if (label === 'done' && fromLabel === 'toValidate') {
+                resolveReview({ taskId: id, approved: true })
             } else {
-                requestReview({ taskId })
+                setStatus({ taskId: id, status: label })
             }
-        } else if (label === 'done' && fromLabel === 'toValidate') {
-            resolveReview({ taskId, approved: true })
-        } else {
-            setStatus({ taskId, status: label })
         }
     }
 
@@ -492,7 +539,7 @@ export default function MyWorkView() {
         }
     }
 
-    const rowProps = (task: Task) => {
+    const rowProps = (task: Task, listTasks: Task[] = [task]) => {
         const approver = task.review?.approver && typeof task.review.approver !== 'string'
             ? task.review.approver
             : null
@@ -520,7 +567,11 @@ export default function MyWorkView() {
                 patchTask({ taskId, formData: { plannedDate: dayKey } }),
             onPatch: (taskId: string, formData: Record<string, unknown>) =>
                 patchTask({ taskId, formData: formData as never }),
-            onDelete: (taskId: string) => removeTask(taskId)
+            onDelete: (taskId: string) => removeTask(taskId),
+            selected: selection.has(task._id),
+            onSelectClick: (mode: 'toggle' | 'range') =>
+                mode === 'range' ? selectRange(task, listTasks) : toggleSelected(task._id, getTaskLabel(task)),
+            selection
         }
     }
 
@@ -609,7 +660,7 @@ export default function MyWorkView() {
             ) : (
                 <ul className="divide-y divide-line max-h-[70vh] overflow-y-auto scrollbar-none">
                     {visibleBacklog.map(task => (
-                        <SimpleTaskRow key={task._id} task={task} {...rowProps(task)} />
+                        <SimpleTaskRow key={task._id} task={task} {...rowProps(task, visibleBacklog)} />
                     ))}
                 </ul>
             )}
@@ -641,7 +692,7 @@ export default function MyWorkView() {
             ) : (
                 <ul className="divide-y divide-line max-h-[70vh] overflow-y-auto scrollbar-none">
                     {reviewTasks.map(task => (
-                        <SimpleTaskRow key={task._id} task={task} showDayOptions={false} {...rowProps(task)} />
+                        <SimpleTaskRow key={task._id} task={task} showDayOptions={false} {...rowProps(task, reviewTasks)} />
                     ))}
                 </ul>
             )}
@@ -674,6 +725,24 @@ export default function MyWorkView() {
                     </Link>
                 }
             />
+
+            {/* Con dos o más marcadas, arrastrar cualquiera de ellas mueve a
+                todas juntas —a un día, a Finalizados o a Por validar—; esta
+                barra confirma cuántas hay elegidas y permite soltar la
+                selección sin tener que ir desmarcándolas una por una. */}
+            {selection.size > 0 && (
+                <div className="flex items-center gap-3 mb-3 px-3 h-10 rounded-md
+                    bg-brand-50 text-brand-700 text-sm font-semibold">
+                    {selection.size === 1 ? '1 pendiente seleccionado' : `${selection.size} pendientes seleccionados`}
+                    <button
+                        type="button"
+                        onClick={() => setSelection(new Map())}
+                        className="ml-auto text-xs font-semibold text-brand-700 hover:text-brand-900 underline"
+                    >
+                        Quitar selección
+                    </button>
+                </div>
+            )}
 
             {isManager && members && members.length > 1 && (
                 <div className="mb-4">
@@ -797,7 +866,7 @@ export default function MyWorkView() {
                                                     <SimpleTaskRow
                                                         key={task._id}
                                                         task={task}
-                                                        {...rowProps(task)}
+                                                        {...rowProps(task, dayTasks)}
                                                     />
                                                 ))}
                                             </ul>
