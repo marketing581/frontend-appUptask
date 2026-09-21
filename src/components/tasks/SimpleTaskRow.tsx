@@ -90,6 +90,34 @@ export default function SimpleTaskRow({
 
     useEffect(() => { setName(task.name) }, [task.name])
 
+    // Sin tope: un nombre largo hace crecer la tarjeta entera en vez de
+    // esconderse detrás de un scroll propio.
+    const resizeName = () => {
+        const el = inputRef.current
+        if (!el) return
+        el.style.height = 'auto'
+        const natural = el.scrollHeight
+        // Oculta (columna del día que no toca en mobile, por ejemplo) mide 0:
+        // no hay que grabar esa medida, o se queda en 0 para siempre aunque
+        // luego se vea. Cuando vuelva a estar visible, el observer de abajo
+        // la recalcula sola.
+        if (natural > 0) el.style.height = `${natural}px`
+    }
+
+    useEffect(resizeName, [name])
+
+    // Cambiar de mobile a desktop —o de día seleccionado— no cambia `name`,
+    // así que el efecto de arriba no se repite solo; esto detecta cuando la
+    // fila pasa de oculta a visible (o cambia de ancho) y mide de nuevo.
+    useEffect(() => {
+        const el = inputRef.current
+        if (!el) return
+        const observer = new ResizeObserver(resizeName)
+        observer.observe(el)
+        return () => observer.disconnect()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
     const commitName = () => {
         const next = name.trim()
         if (next.length === 0) { setName(task.name); return }
@@ -220,13 +248,12 @@ export default function SimpleTaskRow({
                             aria-label={`Nombre de ${task.name}`}
                             title={task.name}
                             className={`min-w-0 flex-1 border-0 p-0 bg-transparent text-sm font-medium
-                                leading-snug focus:ring-0 rounded resize-none overflow-y-auto
-                                max-h-[2.6em] ${
+                                leading-snug focus:ring-0 rounded resize-none overflow-hidden ${
                                 done ? 'text-ink-subtle line-through' : 'text-ink'
                             }`}
                         />
                     ) : (
-                        <p title={task.name} className={`min-w-0 flex-1 line-clamp-2 text-sm font-medium leading-snug ${
+                        <p title={task.name} className={`min-w-0 flex-1 text-sm font-medium leading-snug ${
                             done ? 'text-ink-subtle line-through' : 'text-ink'
                         }`}>
                             {task.name}
