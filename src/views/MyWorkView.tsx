@@ -182,7 +182,7 @@ function FinishedTasks({ userId, now, timezone, rowProps, onDragOver, onDragLeav
                             hint={query ? undefined : 'Lo que vayas marcando como hecho quedará aquí.'}
                         />
                     ) : (
-                        <div className={`max-h-[70vh] overflow-y-auto scrollbar-none ${isFetching ? 'opacity-50' : ''}`}>
+                        <div className={`max-h-[85vh] overflow-y-auto scrollbar-none ${isFetching ? 'opacity-50' : ''}`}>
                             {groups ? (
                                 // Agrupado por semana: de un vistazo, qué se
                                 // cerró esta semana y qué quedó de la anterior.
@@ -658,7 +658,7 @@ export default function MyWorkView() {
                     hint={backlog.length === 0 ? 'Todo lo que tienes está en tu semana o ya está cerrado.' : undefined}
                 />
             ) : (
-                <ul className="divide-y divide-line max-h-[70vh] overflow-y-auto scrollbar-none">
+                <ul className="divide-y divide-line max-h-[85vh] overflow-y-auto scrollbar-none">
                     {visibleBacklog.map(task => (
                         <SimpleTaskRow key={task._id} task={task} {...rowProps(task, visibleBacklog)} />
                     ))}
@@ -690,7 +690,7 @@ export default function MyWorkView() {
                     hint="Lo que se envíe a validar aparece aquí, sin importar la semana."
                 />
             ) : (
-                <ul className="divide-y divide-line max-h-[70vh] overflow-y-auto scrollbar-none">
+                <ul className="divide-y divide-line max-h-[85vh] overflow-y-auto scrollbar-none">
                     {reviewTasks.map(task => (
                         <SimpleTaskRow key={task._id} task={task} showDayOptions={false} {...rowProps(task, reviewTasks)} />
                     ))}
@@ -804,16 +804,16 @@ export default function MyWorkView() {
                 {/* En pantallas anchas, las columnas se reparten el ancho
                     disponible sin scroll; en una laptop más angosta no caben
                     apretadas, así que se deja el ancho mínimo de cada una y
-                    aparece scroll horizontal, que en el trackpad se recorre
-                    con el gesto de dos dedos, como cualquier swipe —sin barra
-                    visible, para no ensuciar la fila—. Pendientes queda fija
+                    aparece scroll horizontal, con su propia barra visible
+                    para que se note que hay más a la derecha —además del
+                    gesto de dos dedos en el trackpad—. Pendientes queda fija
                     a la izquierda y Por validar + Finalizados fijas a la
                     derecha: no se pierden de vista al deslizar entre los
                     días. `items-start` evita que un día vacío se estire al
                     alto del más lleno: cada tarjeta mide lo que pesa su
                     propio contenido. */}
                 <div className="flex flex-col lg:flex-row lg:items-start gap-3
-                    lg:overflow-x-auto lg:pb-1 scrollbar-none">
+                    lg:overflow-x-auto lg:pb-2">
                     <div className="hidden lg:flex lg:flex-col lg:flex-1 lg:min-w-[15rem]
                         lg:sticky lg:left-0 lg:z-10 lg:bg-canvas">
                         {pendingColumn}
@@ -859,9 +859,9 @@ export default function MyWorkView() {
                                         {dayTasks.length > 0 && (
                                             // Un día con muchos pendientes no empuja el resto
                                             // de la página hacia abajo: se desplaza por dentro,
-                                            // con un tope relativo al alto de pantalla en vez de
-                                            // un número fijo de píxeles.
-                                            <ul className="divide-y divide-line max-h-[70vh] overflow-y-auto scrollbar-none">
+                                            // con un tope generoso —casi toda una pantalla grande
+                                            // de desktop— en vez de un número fijo de píxeles.
+                                            <ul className="divide-y divide-line max-h-[85vh] overflow-y-auto scrollbar-none">
                                                 {dayTasks.map(task => (
                                                     <SimpleTaskRow
                                                         key={task._id}
