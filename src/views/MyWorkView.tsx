@@ -11,7 +11,7 @@ import {
 import { useAuth } from '@/hooks/useAuth'
 import { Task } from '@/types'
 import {
-    DEFAULT_TIMEZONE, addDays, dayKey, getZonedParts, startOfWeek
+    DEFAULT_TIMEZONE, addDays, dayKey, getZonedParts, isSameDay, startOfWeek
 } from '@/utils/datetime'
 import { TaskLabel, getTaskLabel } from '@/utils/taskLabels'
 import { TaskKind, kindOf } from '@/utils/taskKind'
@@ -62,38 +62,48 @@ const KIND_FILTERS: { key: TaskKind, label: string }[] = [
 /** Pendientes ya cerrados: lo que se acaba de terminar y lo que se terminó
  *  hace tiempo. Va plegado, como una libreta de lo hecho: no estorba en el
  *  día a día, pero está a un clic cuando hace falta revisar o buscar algo. */
-type FinishedBucket = 'thisWeek' | 'lastWeek' | 'older'
+type FinishedBucket = 'today' | 'thisWeek' | 'older'
 
 const BUCKET_LABEL: Record<FinishedBucket, string> = {
+    today: 'Hoy',
     thisWeek: 'Esta semana',
-    lastWeek: 'Semana pasada',
     older: 'Anteriores'
 }
 
-/** A qué semana pertenece, contando en semanas completas desde la actual —
- *  mismo lunes de arranque que "Mi semana", para que "esta semana" signifique
- *  lo mismo en las dos partes de la pantalla.
+/** La fecha real en que se cerró, no cuándo se tocó por última vez el
+ *  registro: `updatedAt` cambia con cualquier edición posterior (renombrar,
+ *  cambiar la descripción...), y eso la haría "saltar" a Hoy aunque se haya
+ *  cerrado hace semanas. El historial de estados sí dice, sin ambigüedad,
+ *  la última vez que de verdad llegó a Listo. */
+function lastDoneAt(task: Task): Date | null {
+    for (let i = task.statusHistory.length - 1; i >= 0; i--) {
+        if (task.statusHistory[i].to === 'done') return new Date(task.statusHistory[i].changedAt)
+    }
+    return task.updatedAt ? new Date(task.updatedAt) : null
+}
+
+/** A qué grupo pertenece: hoy, en algún otro día de esta semana (mismo lunes
+ *  de arranque que "Mi semana", para que "esta semana" signifique lo mismo
+ *  en las dos partes de la pantalla), o antes.
  *
  *  Lo importado del histórico de Notion no trae una fecha real de cierre —el
  *  CSV de origen no la tenía— así que a la base le queda la fecha en que se
  *  corrió la migración, no la fecha en que de verdad se hizo el trabajo.
  *  Agruparlo por esa fecha inventada haría que cientos de tareas de hace
- *  meses parecieran cerradas "esta semana". Se reconoce por la nota de su
- *  último cambio de estado: si nadie volvió a tocarla desde la importación,
- *  va directo a "Anteriores"; si alguien la retomó después, esa nota más
- *  reciente manda y sí cuenta como trabajo real de esta semana. */
+ *  meses parecieran cerradas "hoy". Se reconoce por la nota de su último
+ *  cambio de estado: si nadie volvió a tocarla desde la importación, va
+ *  directo a "Anteriores"; si alguien la retomó después, esa nota más
+ *  reciente manda y sí cuenta como trabajo real de hoy o de esta semana. */
 function bucketOf(task: Task, now: Date, timezone: string): FinishedBucket {
     const lastChange = task.statusHistory[task.statusHistory.length - 1]
     if (lastChange?.note?.includes('Importado del histórico de Notion')) return 'older'
 
-    const updatedAt = task.updatedAt
-    if (!updatedAt) return 'older'
-    const taskWeek = startOfWeek(new Date(updatedAt), timezone).getTime()
+    const finishedAt = lastDoneAt(task)
+    if (!finishedAt) return 'older'
+    if (isSameDay(finishedAt, now, timezone)) return 'today'
+    const taskWeek = startOfWeek(finishedAt, timezone).getTime()
     const thisWeek = startOfWeek(now, timezone).getTime()
-    const weeksAgo = Math.round((thisWeek - taskWeek) / (7 * 86400000))
-    if (weeksAgo <= 0) return 'thisWeek'
-    if (weeksAgo === 1) return 'lastWeek'
-    return 'older'
+    return taskWeek === thisWeek ? 'thisWeek' : 'older'
 }
 
 type RowProps = Omit<ComponentProps<typeof SimpleTaskRow>, 'task'>
@@ -124,12 +134,20 @@ function FinishedTasks({ userId, now, timezone, rowProps, onDragOver, onDragLeav
         retry: false
     })
 
-    const tasks = useMemo(() => data?.tasks ?? [], [data])
+    // El servidor las trae ordenadas por última edición, no por cuándo se
+    // cerraron de verdad —tocar la descripción de algo ya cerrado no debería
+    // hacerlo saltar arriba—; se reordenan aquí por la fecha real de cierre.
+    const tasks = useMemo(() => {
+        return [...(data?.tasks ?? [])].sort(
+            (a, b) => (lastDoneAt(b)?.getTime() ?? 0) - (lastDoneAt(a)?.getTime() ?? 0)
+        )
+    }, [data])
     const total = data?.total ?? 0
 
-    /** Sin buscar, se agrupa por semana —para mapear de un vistazo qué se
-     *  cerró esta semana y qué quedó de la anterior—; buscando algo puntual,
-     *  la agrupación no aporta y se muestra en una sola lista. */
+    /** Sin buscar, se agrupa por cuándo se cerró —Hoy primero, para lo que se
+     *  acaba de terminar; luego el resto de esta semana; luego todo lo
+     *  anterior—; buscando algo puntual, la agrupación no aporta y se
+     *  muestra en una sola lista. */
     const groups = useMemo(() => {
         if (query) return null
         const buckets = new Map<FinishedBucket, typeof tasks>()
@@ -138,7 +156,7 @@ function FinishedTasks({ userId, now, timezone, rowProps, onDragOver, onDragLeav
             if (!buckets.has(key)) buckets.set(key, [])
             buckets.get(key)!.push(task)
         }
-        return (['thisWeek', 'lastWeek', 'older'] as FinishedBucket[])
+        return (['today', 'thisWeek', 'older'] as FinishedBucket[])
             .map(key => ({ key, tasks: buckets.get(key) ?? [] }))
             .filter(group => group.tasks.length > 0)
     }, [tasks, query, now, timezone])
