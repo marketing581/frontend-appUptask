@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
 import { Task } from '@/types'
 import { ALERT_COLOR, TaskLabel, frequencyShort, getTaskLabel } from '@/utils/taskLabels'
 import { kindOf } from '@/utils/taskKind'
@@ -10,26 +9,6 @@ import ColorTagDot from './ColorTagDot'
 import DescriptionModal from './DescriptionModal'
 import TaskActionsMenu from './TaskActionsMenu'
 import TaskStatusControl from './TaskStatusControl'
-
-/** Seis puntos, como en cualquier fila que se puede arrastrar (Trello,
- *  Linear, Notion): sin esto, "se puede arrastrar" solo lo decía el cursor
- *  al pasar por encima, y con el menú de tres puntos ya sin la opción de
- *  elegir día, arrastrar es la única forma de mover un pendiente entre
- *  columnas. Aparece con la fila, no antes: agregarlo siempre visible
- *  competiría con el punto de color, que ya ocupa ese primer lugar. */
-function DragHandle() {
-    return (
-        <svg
-            aria-hidden="true"
-            width="8" height="16" viewBox="0 0 8 16" fill="currentColor"
-            className="shrink-0"
-        >
-            <circle cx="2" cy="2" r="1.3" /><circle cx="6" cy="2" r="1.3" />
-            <circle cx="2" cy="8" r="1.3" /><circle cx="6" cy="8" r="1.3" />
-            <circle cx="2" cy="14" r="1.3" /><circle cx="6" cy="14" r="1.3" />
-        </svg>
-    )
-}
 
 /** Fila de la vista simplificada de "Mi trabajo": lo único que importa
  *  momento a momento. Cambiar el estado y jalar algo a hoy son gestos de un
@@ -282,14 +261,6 @@ export default function SimpleTaskRow({
                 dropPos === 'after' ? 'shadow-[inset_0_-2px_0_0_theme(colors.brand.500)]' : ''
             }`}
         >
-            {canEdit && (
-                <span
-                    className="self-center text-ink-subtle/0 group-hover:text-ink-subtle/50 transition-colors"
-                >
-                    <DragHandle />
-                </span>
-            )}
-
             <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-1.5">
                     <ColorTagDot
@@ -403,21 +374,19 @@ export default function SimpleTaskRow({
                     {/* Siempre a la vista, tenga o no ya texto: sin esto, la
                         única forma de llegar al editor completo era escribir
                         tanto que desbordara el campo corto —invisible si la
-                        tarjeta estaba vacía o con poco texto—. Un solo trazo
-                        hacia afuera de un recuadro dice "ábrelo aparte"; las
-                        cuatro flechas del ícono anterior se leían como
-                        "arrastra esto", que ya lo dice el asa de la fila. */}
+                        tarjeta estaba vacía o con poco texto—. Como texto, no
+                        como ícono: un ícono aparte para "ábrelo más grande"
+                        no se entendía; la palabra no deja duda. */}
                     {(canEdit || description) && (
                         <button
                             type="button"
                             onMouseDown={event => event.stopPropagation()}
                             onClick={() => setDescModalOpen(true)}
-                            title="Descripción completa"
                             aria-label={`Descripción completa de ${task.name}`}
-                            className="w-5 h-5 shrink-0 grid place-content-center rounded text-ink-subtle/70
-                                hover:bg-slate-200 hover:text-ink transition-colors"
+                            className="shrink-0 text-2xs text-ink-subtle/60 hover:text-brand-600
+                                hover:underline transition-colors"
                         >
-                            <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
+                            Ampliar
                         </button>
                     )}
                 </div>
