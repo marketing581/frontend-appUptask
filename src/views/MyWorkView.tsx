@@ -283,18 +283,17 @@ export default function MyWorkView() {
             : `${first.day} de ${MONTHS[first.month - 1]} – ${last.day} de ${MONTHS[last.month - 1]}`
     }, [now, timezone])
 
-    /** La encargada puede abrir esta misma pantalla para Nicole o Sofianne: es
-     *  la vista de «qué le toca a una persona», y necesita responderla también
-     *  de quien coordina. Las demás solo se ven a sí mismas, y el servidor
-     *  aplica esa misma regla. */
-    const isManager = currentUser?.role === 'manager'
+    /** Cualquiera puede abrir esta misma pantalla para Nicole o Sofianne, no
+     *  solo la encargada: es la vista de «qué le toca a una persona», y el
+     *  equipo se ve entre sí para coordinarse. El servidor ya aplicaba esta
+     *  misma regla desde antes —esto solo deja de ocultar el selector. */
     const [viewing, setViewing] = useState<string>('')
     const personId = viewing || currentUser?._id
 
     const { data: members } = useQuery({
         queryKey: ['scheduleMembers'],
         queryFn: getScheduleMembers,
-        enabled: isManager,
+        enabled: !!currentUser,
         retry: false
     })
 
@@ -783,7 +782,7 @@ export default function MyWorkView() {
                 </div>
             )}
 
-            {isManager && members && members.length > 1 && (
+            {members && members.length > 1 && (
                 <div className="mb-4">
                     <PersonSwitcher
                         members={members}

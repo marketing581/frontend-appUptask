@@ -33,13 +33,12 @@ export default function FinalizadosView() {
     const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
     const timezone = currentUser?.timezone ?? DEFAULT_TIMEZONE
-    const isManager = currentUser?.role === 'manager'
     const todayKey = useMemo(() => dayKey(new Date(), timezone), [timezone])
 
     const { data: members } = useQuery({
         queryKey: ['scheduleMembers'],
         queryFn: getScheduleMembers,
-        enabled: isManager,
+        enabled: !!currentUser,
         retry: false
     })
 
@@ -176,7 +175,7 @@ export default function FinalizadosView() {
                     {total > 0 ? `${total} finalizado${total === 1 ? '' : 's'}` : 'Nada finalizado en este periodo'}
                 </span>
 
-                {isManager && members && members.length > 0 && (
+                {members && members.length > 0 && (
                     <div className="ml-auto">
                         <PersonSwitcher
                             members={members}
