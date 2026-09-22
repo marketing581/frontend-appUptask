@@ -89,11 +89,12 @@ function NavRow({ item, count, collapsed, onNavigate }: {
 }
 
 function SidebarContent({
-    onNavigate, name, role, isSuperAdmin, workspaceName, workspaceId, collapsed, onToggleCollapse
+    onNavigate, name, role, gender, isSuperAdmin, workspaceName, workspaceId, collapsed, onToggleCollapse
 }: {
     onNavigate?: () => void
     name: string
     role?: string
+    gender?: string
     isSuperAdmin?: boolean
     workspaceName: string
     workspaceId?: string
@@ -106,7 +107,9 @@ function SidebarContent({
     const badges = useNavBadges()
     const sections = NAV_SECTIONS.map(section => ({
         ...section,
-        items: section.items.filter(item => !item.ownerOnly || isSuperAdmin)
+        items: section.items.filter(item =>
+            (!item.ownerOnly || isSuperAdmin) && (!item.managerOnly || role === 'manager')
+        )
     }))
 
     const { data: workspaces } = useQuery({
@@ -223,7 +226,7 @@ function SidebarContent({
                         <div className="min-w-0 flex-1">
                             <p className="text-sm font-semibold text-ink truncate leading-tight">{name}</p>
                             <p className="text-2xs text-ink-subtle leading-tight">
-                                {role === 'manager' ? 'Encargada' : 'Integrante'}
+                                {role === 'manager' ? (gender === 'm' ? 'Encargado' : 'Encargada') : 'Integrante'}
                             </p>
                         </div>
                     )}
@@ -317,6 +320,7 @@ export default function AppLayout() {
                 <SidebarContent
                     name={data.name}
                     role={data.role}
+                    gender={data.gender}
                     isSuperAdmin={data.isSuperAdmin}
                     workspaceName={data.workspace?.name ?? 'UpTask'}
                     workspaceId={data.workspace?._id}
@@ -362,6 +366,7 @@ export default function AppLayout() {
                         <SidebarContent
                             name={data.name}
                             role={data.role}
+                    gender={data.gender}
                             isSuperAdmin={data.isSuperAdmin}
                             workspaceName={data.workspace?.name ?? 'UpTask'}
                             workspaceId={data.workspace?._id}

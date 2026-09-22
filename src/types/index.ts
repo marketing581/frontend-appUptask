@@ -40,6 +40,7 @@ export const userSchema = authSchema.pick({
 }).extend({
     _id: z.string(),
     role: z.enum(['manager', 'member']).optional(),
+    gender: z.enum(['f', 'm']).optional(),
     timezone: z.string().optional(),
     schedulePrefs: schedulePrefsSchema.optional(),
     workspace: workspaceSchema.optional(),
@@ -254,7 +255,8 @@ export type UnscheduledRow = z.infer<typeof unscheduledRowSchema>
 /** Panel del equipo: una columna por persona. */
 export const teamPanelSchema = z.object({
     user: userSchema.pick({ _id: true, name: true, email: true }).extend({
-        role: z.enum(['manager', 'member']).optional()
+        role: z.enum(['manager', 'member']).optional(),
+        gender: z.enum(['f', 'm']).optional()
     }),
     tasks: z.array(taskSchema),
     scheduledToday: z.number()
@@ -376,3 +378,17 @@ export const finishedReportSchema = z.object({
     rows: z.array(finishedRowSchema)
 })
 export type FinishedRow = z.infer<typeof finishedRowSchema>
+
+/** Autoservicio del import de Notion: pegar el CSV, elegir responsable, y
+ *  con `dryRun` solo revisar antes de confirmar. */
+export const notionImportResultSchema = z.object({
+    total: z.number(),
+    created: z.number(),
+    updated: z.number(),
+    preview: z.array(z.object({
+        name: z.string(),
+        status: z.enum(['pending', 'inProgress', 'done']),
+        onHold: z.boolean()
+    }))
+})
+export type NotionImportResult = z.infer<typeof notionImportResultSchema>

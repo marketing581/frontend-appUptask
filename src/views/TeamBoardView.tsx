@@ -215,7 +215,9 @@ function PersonHeader({ panel, isSelf, canEdit }: {
                         {isSelf && <span className="text-ink-subtle font-medium"> · tú</span>}
                     </p>
                     <p className="text-2xs text-ink-subtle leading-tight truncate">
-                        {panel.user.role === 'manager' ? 'Encargada' : 'Integrante'}
+                        {panel.user.role === 'manager'
+                            ? (panel.user.gender === 'm' ? 'Encargado' : 'Encargada')
+                            : 'Integrante'}
                     </p>
                 </div>
                 {!canEdit && (
