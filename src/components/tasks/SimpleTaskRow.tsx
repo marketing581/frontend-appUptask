@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { PlusIcon } from '@heroicons/react/24/outline'
+import { PencilIcon } from '@heroicons/react/24/outline'
 import { Task } from '@/types'
 import { ALERT_COLOR, TaskLabel, frequencyShort, getTaskLabel } from '@/utils/taskLabels'
 import { kindOf } from '@/utils/taskKind'
@@ -132,7 +132,7 @@ export default function SimpleTaskRow({
     }
 
     // Corta, se escribe ahí mismo y se guarda sola al salir, igual que el
-    // nombre —pero solo hasta cierta altura: pasado eso, "Ampliar editor"
+    // nombre —pero solo hasta cierta altura: pasado eso, "Ver descripción"
     // lleva al modal en vez de seguir agrandando la tarjeta.
     const [description, setDescription] = useState(task.description ?? '')
     const [descFocused, setDescFocused] = useState(false)
@@ -164,6 +164,12 @@ export default function SimpleTaskRow({
         const el = descPreviewRef.current
         setShowViewMore(!!el && el.scrollHeight > el.clientHeight + 1)
     }, [description, descFocused])
+
+    // Un solo control para "ábrelo más grande", nunca dos a la vez: lápiz
+    // mientras entra en dos líneas (vacía o breve), enlace de texto en
+    // cuanto no entra —escribiendo o no—. Cambiar de uno a otro según el
+    // foco haría que el control saltara de sitio apenas se hace clic.
+    const descriptionOverflows = descFocused ? showExpandEditor : showViewMore
 
     const commitDescription = () => {
         const next = description.trim()
@@ -297,9 +303,15 @@ export default function SimpleTaskRow({
                     )}
                 </div>
 
-                <div className="flex items-start gap-1 mt-0.5">
-                    {canEdit && descFocused ? (
-                        <div className="min-w-0 flex-1">
+                {/* Alineada con el inicio del título, no con el punto de
+                    color: 22px = el ancho del punto (16px) más el hueco
+                    entre el punto y el título (6px). Sin descripción y sin
+                    poder editarla no hay nada que mostrar ni que ofrecer
+                    abrir: la fila entera se salta, para que la tarjeta se
+                    quede compacta en vez de dejar un renglón vacío. */}
+                {(canEdit || description) && (
+                    <div className="flex items-start gap-1 mt-0.5 pl-[22px]">
+                        {canEdit && descFocused ? (
                             <textarea
                                 ref={descriptionRef}
                                 value={description}
@@ -312,85 +324,72 @@ export default function SimpleTaskRow({
                                         descriptionRef.current?.blur()
                                     }
                                 }}
-                                placeholder="Descripción"
+                                placeholder="Descripción…"
                                 autoFocus
                                 aria-label={`Descripción de ${task.name}`}
-                                className="block w-full resize-none overflow-y-auto border-0 p-0 bg-transparent
+                                className="min-w-0 flex-1 resize-none overflow-y-auto border-0 p-0 bg-transparent
                                     text-2xs leading-snug text-ink-subtle placeholder:text-ink-subtle/60
                                     focus:ring-0"
                             />
-                            {showExpandEditor && (
-                                <button
-                                    type="button"
-                                    onMouseDown={event => event.stopPropagation()}
-                                    onClick={() => {
-                                        commitDescription()
-                                        setDescFocused(false)
-                                        setDescModalOpen(true)
-                                    }}
-                                    className="block text-2xs font-semibold text-brand-600 hover:underline"
-                                >
-                                    Ampliar editor
-                                </button>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="min-w-0 flex-1">
-                            {description ? (
-                                <>
-                                    <p
-                                        ref={descPreviewRef}
-                                        onClick={() => canEdit && setDescFocused(true)}
-                                        onMouseDown={event => event.stopPropagation()}
-                                        className={`text-2xs leading-snug text-ink-subtle whitespace-pre-line line-clamp-2 ${
-                                            canEdit ? 'cursor-text' : ''
-                                        }`}
-                                    >
-                                        {plainPreview(description, 240)}
-                                    </p>
-                                    {showViewMore && (
-                                        <button
-                                            type="button"
-                                            onMouseDown={event => event.stopPropagation()}
-                                            onClick={() => setDescModalOpen(true)}
-                                            className="block text-2xs font-semibold text-brand-600 hover:underline"
-                                        >
-                                            Ver más
-                                        </button>
-                                    )}
-                                </>
-                            ) : canEdit ? (
-                                <button
-                                    type="button"
-                                    onMouseDown={event => event.stopPropagation()}
-                                    onClick={() => setDescFocused(true)}
-                                    className="flex items-center gap-0.5 text-2xs text-ink-subtle/60 hover:text-ink-subtle"
-                                >
-                                    <PlusIcon className="w-3 h-3" /> Añadir descripción
-                                </button>
-                            ) : null}
-                        </div>
-                    )}
+                        ) : description ? (
+                            <p
+                                ref={descPreviewRef}
+                                onClick={() => canEdit && setDescFocused(true)}
+                                onMouseDown={event => event.stopPropagation()}
+                                className={`min-w-0 flex-1 text-2xs leading-snug text-ink-subtle
+                                    whitespace-pre-line line-clamp-2 ${canEdit ? 'cursor-text' : ''}`}
+                            >
+                                {plainPreview(description, 240)}
+                            </p>
+                        ) : (
+                            // Solo llega aquí si canEdit es cierto (la fila
+                            // entera se salta cuando no hay ni descripción ni
+                            // permiso de editar).
+                            <button
+                                type="button"
+                                onMouseDown={event => event.stopPropagation()}
+                                onClick={() => setDescFocused(true)}
+                                className="min-w-0 flex-1 text-left text-2xs text-ink-subtle/50 hover:text-ink-subtle"
+                            >
+                                Descripción…
+                            </button>
+                        )}
 
-                    {/* Siempre a la vista, tenga o no ya texto: sin esto, la
-                        única forma de llegar al editor completo era escribir
-                        tanto que desbordara el campo corto —invisible si la
-                        tarjeta estaba vacía o con poco texto—. Como texto, no
-                        como ícono: un ícono aparte para "ábrelo más grande"
-                        no se entendía; la palabra no deja duda. */}
-                    {(canEdit || description) && (
-                        <button
-                            type="button"
-                            onMouseDown={event => event.stopPropagation()}
-                            onClick={() => setDescModalOpen(true)}
-                            aria-label={`Descripción completa de ${task.name}`}
-                            className="shrink-0 text-2xs text-ink-subtle/60 hover:text-brand-600
-                                hover:underline transition-colors"
-                        >
-                            Ampliar
-                        </button>
-                    )}
-                </div>
+                        {/* Un solo control para el editor grande, nunca dos:
+                            el lápiz mientras el texto entra en dos líneas
+                            —vacío o breve—, o el enlace en cuanto no entra,
+                            escribiendo o no. Nunca los dos juntos.
+                            `preventDefault` en el mousedown, no solo
+                            `stopPropagation`: sin esto, al hacer clic
+                            mientras se escribe, el campo perdía el foco
+                            antes del clic, la fila se volvía a pintar sin
+                            este botón en el mismo lugar, y el clic se
+                            perdía —abrir el modal fallaba en silencio. */}
+                        {descriptionOverflows ? (
+                            <button
+                                type="button"
+                                onMouseDown={event => { event.stopPropagation(); event.preventDefault() }}
+                                onClick={() => setDescModalOpen(true)}
+                                aria-label={`Ver descripción completa de ${task.name}`}
+                                className="shrink-0 text-2xs font-semibold text-brand-600 hover:underline"
+                            >
+                                Ver descripción
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                onMouseDown={event => { event.stopPropagation(); event.preventDefault() }}
+                                onClick={() => setDescModalOpen(true)}
+                                title="Abrir descripción"
+                                aria-label="Abrir descripción"
+                                className="shrink-0 w-6 h-6 -my-1 grid place-content-center rounded-full
+                                    text-ink-subtle/60 hover:bg-slate-200 hover:text-ink transition-colors"
+                            >
+                                <PencilIcon className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 <DescriptionModal
                     isOpen={descModalOpen}
