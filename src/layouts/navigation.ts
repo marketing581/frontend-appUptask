@@ -1,6 +1,7 @@
 import {
     CalendarDaysIcon,
     ChartBarIcon,
+    CheckCircleIcon,
     DocumentTextIcon,
     RectangleStackIcon,
     Squares2X2Icon,
@@ -53,6 +54,14 @@ export const NAV_SECTIONS: NavSection[] = [
                 label: 'Mi calendario',
                 hint: 'Cuándo lo haré',
                 icon: CalendarDaysIcon,
+                end: false,
+                badge: null
+            },
+            {
+                to: '/finalizados',
+                label: 'Finalizados',
+                hint: 'Lo que se ha logrado, día a día',
+                icon: CheckCircleIcon,
                 end: false,
                 badge: null
             }

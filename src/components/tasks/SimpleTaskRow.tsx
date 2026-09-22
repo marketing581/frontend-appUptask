@@ -68,16 +68,31 @@ type Props = {
      *  sin ir a buscarla otra vez—. Si esta fila está seleccionada y hay más
      *  de una, arrastrar cualquiera de las seleccionadas mueve a todas. */
     selection?: Map<string, TaskLabel>
+    /** Qué lista es esta fila (Pendientes, un día, Por validar) —Finalizados
+     *  no trae esto, ahí el orden lo manda la fecha real de cierre, no la
+     *  mano—. Sirve para reordenar arrastrando una fila sobre otra de la
+     *  misma lista, sin confundirlo con moverla a otra columna. */
+    listKey?: string
+    onReorder?: (draggedIds: string[], targetTaskId: string, position: 'before' | 'after') => void
 }
 
 export default function SimpleTaskRow({
     task, weekDays, todayKey, canEdit, canHide, busy, showDayOptions = true,
     reviewInfo, canResolveReview, onApprove, onRequestChanges,
     onSetLabel, onSetDay, onPatch, onDelete,
-    selected, onSelectClick, selection
+    selected, onSelectClick, selection, listKey, onReorder
 }: Props) {
     const [adjusting, setAdjusting] = useState(false)
     const [adjustNote, setAdjustNote] = useState('')
+    // Dónde quedaría si se soltara ahora mismo: arriba o abajo de esta fila.
+    // Solo pinta la raya guía; el drop de verdad ocurre en `onDrop`.
+    const [dropPos, setDropPos] = useState<'before' | 'after' | null>(null)
+    const rowRef = useRef<HTMLLIElement>(null)
+    // El drag que viene de esta misma lista se marca con un tipo de MIME
+    // propio (no con su valor): durante `dragover` los navegadores solo
+    // dejan leer qué tipos hay, no el contenido, así que el nombre del tipo
+    // es la única forma de saber "es de aquí" antes de soltar.
+    const LIST_MARKER = listKey ? `application/x-uptask-list-${listKey}` : null
     const label = getTaskLabel(task)
     const done = label === 'done' || !!task.doneForPeriod
     // Una recurrente hecha hoy se ve como "Listo" aunque el estado real siga
@@ -190,6 +205,7 @@ export default function SimpleTaskRow({
 
     return (
         <li
+            ref={rowRef}
             draggable={canEdit}
             onDragStart={event => {
                 // Arrastrar una fila seleccionada, habiendo más de una
@@ -199,7 +215,34 @@ export default function SimpleTaskRow({
                     ? Array.from(selection, ([id, itemLabel]) => ({ id, label: itemLabel }))
                     : [{ id: task._id, label }]
                 event.dataTransfer.setData('application/x-uptask-plan-items', JSON.stringify(items))
+                if (LIST_MARKER) event.dataTransfer.setData(LIST_MARKER, '1')
                 event.dataTransfer.effectAllowed = 'move'
+            }}
+            // Reordenar dentro de la misma lista: si lo que se arrastra trae
+            // el marcador de esta lista, se pinta la raya guía y se corta la
+            // propagación para que la columna no lo tome también como un
+            // cambio de etapa.
+            onDragOver={event => {
+                if (!LIST_MARKER || !onReorder) return
+                if (!event.dataTransfer.types.includes(LIST_MARKER)) return
+                event.preventDefault()
+                event.stopPropagation()
+                const rect = rowRef.current?.getBoundingClientRect()
+                if (!rect) return
+                setDropPos(event.clientY > rect.top + rect.height / 2 ? 'after' : 'before')
+            }}
+            onDragLeave={() => setDropPos(null)}
+            onDrop={event => {
+                setDropPos(null)
+                if (!LIST_MARKER || !onReorder) return
+                if (!event.dataTransfer.types.includes(LIST_MARKER)) return
+                event.preventDefault()
+                event.stopPropagation()
+                const raw = event.dataTransfer.getData('application/x-uptask-plan-items')
+                const items: { id: string }[] = raw ? JSON.parse(raw) : []
+                const draggedIds = items.map(item => item.id)
+                if (draggedIds.includes(task._id)) return
+                onReorder(draggedIds, task._id, dropPos === 'after' ? 'after' : 'before')
             }}
             // Cmd/Ctrl+clic o Shift+clic seleccionan en vez de hacer lo que
             // haría un clic normal en lo que se tocó —abrir el detalle,
@@ -225,6 +268,8 @@ export default function SimpleTaskRow({
                 colorTag ? 'hover:brightness-[0.97]' : 'hover:bg-surface-sunken'
             } ${canEdit ? 'cursor-grab active:cursor-grabbing' : ''} ${
                 selected ? 'ring-2 ring-inset ring-brand-500' : ''
+            } ${dropPos === 'before' ? 'shadow-[inset_0_2px_0_0_theme(colors.brand.500)]' : ''} ${
+                dropPos === 'after' ? 'shadow-[inset_0_-2px_0_0_theme(colors.brand.500)]' : ''
             }`}
         >
             <div className="min-w-0 flex-1">

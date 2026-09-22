@@ -108,6 +108,9 @@ export const taskSchema = z.object({
     /** El día en que se piensa hacer, sin hora. Es lo que arma "Hoy": no es
      *  un bloque de calendario ni una fecha límite. */
     plannedDate: z.string().nullable().default(null),
+    /** Posición manual dentro de su lista (Pendientes, un día, Por validar):
+     *  a igual valor, se respeta el orden que ya traía. */
+    order: z.number().default(0),
     checklist: z.array(z.object({
         _id: z.string().optional(),
         text: z.string(),
@@ -350,3 +353,17 @@ export const taskDurationReportSchema = z.object({
 })
 export type TaskDurationRow = z.infer<typeof taskDurationRowSchema>
 export type TaskDurationReport = z.infer<typeof taskDurationReportSchema>
+
+/** Un pendiente ya cerrado, para la vista "Finalizados": por la fecha real
+ *  del último paso a Listo, no por cuándo se tocó por última vez. */
+export const finishedRowSchema = z.object({
+    taskId: z.string(),
+    taskName: z.string(),
+    assigneeId: z.string().nullable(),
+    assigneeName: z.string(),
+    finishedAt: z.string()
+})
+export const finishedReportSchema = z.object({
+    rows: z.array(finishedRowSchema)
+})
+export type FinishedRow = z.infer<typeof finishedRowSchema>

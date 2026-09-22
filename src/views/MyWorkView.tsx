@@ -510,6 +510,11 @@ export default function MyWorkView() {
     // planificada, para no verla dos veces.
     const isAwaitingReview = (task: Task) => getTaskLabel(task) === 'toValidate'
 
+    // A igual `order` (0 de fábrica, para lo que nunca se arrastró a mano),
+    // `sort` es estable y conserva el orden que ya traían —el que decide el
+    // servidor—; solo manda de verdad después de reordenar una lista a mano.
+    const byOrder = (list: Task[]) => [...list].sort((a, b) => a.order - b.order)
+
     const tasksByDay = useMemo(() => {
         const map = new Map<string, Task[]>(weekDays.map(day => [day.key, []]))
         for (const task of mine) {
@@ -517,6 +522,7 @@ export default function MyWorkView() {
             const key = dayOf(task)
             if (key && map.has(key)) map.get(key)!.push(task)
         }
+        for (const [key, list] of map) map.set(key, byOrder(list))
         return map
     }, [mine, weekDays])
 
@@ -525,10 +531,10 @@ export default function MyWorkView() {
         [mine, isPlannedThisWeek]
     )
     const backlog = useMemo(
-        () => mine.filter(task => !isAwaitingReview(task) && !isPlannedThisWeek(task)),
+        () => byOrder(mine.filter(task => !isAwaitingReview(task) && !isPlannedThisWeek(task))),
         [mine, isPlannedThisWeek]
     )
-    const reviewTasks = useMemo(() => mine.filter(isAwaitingReview), [mine])
+    const reviewTasks = useMemo(() => byOrder(mine.filter(isAwaitingReview)), [mine])
 
     const kindsPresent = useMemo(() => new Set(backlog.map(kindOf)), [backlog])
     const visibleBacklog = kindFilter === 'all' ? backlog : backlog.filter(task => kindOf(task) === kindFilter)
@@ -557,7 +563,28 @@ export default function MyWorkView() {
         }
     }
 
-    const rowProps = (task: Task, listTasks: Task[] = [task]) => {
+    /** Reordena a mano dentro de una lista: saca lo arrastrado de donde
+     *  estaba, lo inserta junto al objetivo y reescribe el `order` de toda
+     *  la lista visible en ese momento —listas cortas, así que no hace
+     *  falta nada más fino que enteros consecutivos—. Solo se escribe lo
+     *  que de verdad cambió de posición. */
+    const reorderWithinList = (
+        listTasks: Task[], draggedIds: string[], targetTaskId: string, position: 'before' | 'after'
+    ) => {
+        const draggedSet = new Set(draggedIds)
+        const remaining = listTasks.filter(task => !draggedSet.has(task._id))
+        const draggedInOrder = listTasks.filter(task => draggedSet.has(task._id))
+        const targetIndex = remaining.findIndex(task => task._id === targetTaskId)
+        const insertAt = targetIndex === -1
+            ? remaining.length
+            : position === 'after' ? targetIndex + 1 : targetIndex
+        const next = [...remaining.slice(0, insertAt), ...draggedInOrder, ...remaining.slice(insertAt)]
+        next.forEach((task, index) => {
+            if (task.order !== index) patchTask({ taskId: task._id, formData: { order: index } })
+        })
+    }
+
+    const rowProps = (task: Task, listTasks: Task[] = [task], listKey?: string) => {
         const approver = task.review?.approver && typeof task.review.approver !== 'string'
             ? task.review.approver
             : null
@@ -589,7 +616,12 @@ export default function MyWorkView() {
             selected: selection.has(task._id),
             onSelectClick: (mode: 'toggle' | 'range') =>
                 mode === 'range' ? selectRange(task, listTasks) : toggleSelected(task._id, getTaskLabel(task)),
-            selection
+            selection,
+            listKey,
+            onReorder: listKey
+                ? (draggedIds: string[], targetTaskId: string, position: 'before' | 'after') =>
+                    reorderWithinList(listTasks, draggedIds, targetTaskId, position)
+                : undefined
         }
     }
 
@@ -678,7 +710,7 @@ export default function MyWorkView() {
             ) : (
                 <ul className="divide-y divide-line max-h-[85vh] overflow-y-auto scrollbar-none">
                     {visibleBacklog.map(task => (
-                        <SimpleTaskRow key={task._id} task={task} {...rowProps(task, visibleBacklog)} />
+                        <SimpleTaskRow key={task._id} task={task} {...rowProps(task, visibleBacklog, 'backlog')} />
                     ))}
                 </ul>
             )}
@@ -710,7 +742,7 @@ export default function MyWorkView() {
             ) : (
                 <ul className="divide-y divide-line max-h-[85vh] overflow-y-auto scrollbar-none">
                     {reviewTasks.map(task => (
-                        <SimpleTaskRow key={task._id} task={task} showDayOptions={false} {...rowProps(task, reviewTasks)} />
+                        <SimpleTaskRow key={task._id} task={task} showDayOptions={false} {...rowProps(task, reviewTasks, 'review')} />
                     ))}
                 </ul>
             )}
@@ -886,7 +918,7 @@ export default function MyWorkView() {
                                                     <SimpleTaskRow
                                                         key={task._id}
                                                         task={task}
-                                                        {...rowProps(task, dayTasks)}
+                                                        {...rowProps(task, dayTasks, day.key)}
                                                     />
                                                 ))}
                                             </ul>

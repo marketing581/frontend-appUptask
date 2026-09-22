@@ -1,6 +1,6 @@
 import { isAxiosError } from 'axios'
 import api from '@/lib/axios'
-import { QuickTaskFormData, Task, TaskStatus, taskSchema } from '@/types'
+import { QuickTaskFormData, Task, TaskStatus, finishedReportSchema, taskSchema } from '@/types'
 
 /** Tareas fuera del contexto de un proyecto: puntuales, operativas y las de
  *  proyecto vistas desde el calendario. Comparten colección con las de
@@ -155,5 +155,23 @@ export async function deleteWorkTask(taskId: string) {
         return data
     } catch (error) {
         extractError(error, 'No se pudo eliminar la tarea')
+    }
+}
+
+/** Lo cerrado en un rango de fechas, por la fecha real de cierre —para la
+ *  vista "Finalizados"—. `assignee` puede ser un id, o "all" para todo el
+ *  equipo visible. */
+export async function getFinishedTasks({ assignee, from, to }: {
+    assignee?: string, from: Date, to: Date
+}) {
+    try {
+        const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })
+        if (assignee) params.set('assignee', assignee)
+        const { data } = await api.get(`/tasks/finished?${params.toString()}`)
+        const result = finishedReportSchema.safeParse(data)
+        if (result.success) return result.data
+        throw new Error('La respuesta de finalizados no tiene el formato esperado')
+    } catch (error) {
+        extractError(error, 'No se pudieron cargar los pendientes finalizados')
     }
 }
