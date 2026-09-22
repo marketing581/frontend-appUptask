@@ -875,7 +875,7 @@ export default function MyWorkView() {
                                 onDragLeave={() => setDragOverKey(current => current === day.key ? null : current)}
                                 onDrop={dropOnto(day.key)}
                                 className={`card overflow-hidden flex-col transition-shadow
-                                    lg:flex-1 lg:min-w-[12rem] ${
+                                    lg:flex-1 lg:min-w-[15rem] ${
                                     selectedDay === day.key ? 'flex' : 'hidden lg:flex'
                                 } ${day.isToday ? 'ring-1 ring-brand-300' : ''} ${
                                     isDropTarget ? 'ring-2 ring-brand-500 shadow-raised' : ''
