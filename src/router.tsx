@@ -22,6 +22,7 @@ import TeamBoardView from './views/TeamBoardView'
 import MemosView from './views/MemosView'
 import InformesView from './views/InformesView'
 import FinalizadosView from './views/FinalizadosView'
+import ImportNotionView from './views/ImportNotionView'
 
 export default function Router() {
 
@@ -35,6 +36,7 @@ export default function Router() {
                     <Route path='/notas' element={<MemosView />} />
                     <Route path='/finalizados' element={<FinalizadosView />} />
                     <Route path='/informes' element={<InformesView />} />
+                    <Route path='/importar-notion' element={<ImportNotionView />} />
                     <Route path='/equipo' element={<TeamBoardView />} />
                     <Route path='/proyectos' element={<DashboardView />} />
                     {/* La creación pasó a ser un modal sobre "/proyectos" */}
