@@ -1,6 +1,5 @@
 import { ComponentProps, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { getScheduleMembers } from '@/api/ScheduleAPI'
@@ -15,7 +14,7 @@ import {
 } from '@/utils/datetime'
 import { TaskLabel, getTaskLabel } from '@/utils/taskLabels'
 import { TaskKind, kindOf } from '@/utils/taskKind'
-import { Button, EmptyState, PageHeader } from '@/components/ui'
+import { EmptyState, PageHeader } from '@/components/ui'
 import PersonSwitcher from '@/components/team/PersonSwitcher'
 import QuickCreateTask from '@/components/tasks/QuickCreateTask'
 import SimpleTaskRow from '@/components/tasks/SimpleTaskRow'
@@ -769,11 +768,6 @@ export default function MyWorkView() {
                     ? `Hola, ${currentUser?.name.split(' ')[0] ?? ''}`
                     : `Trabajo de ${firstName}`}
                 subtitle={`${WEEKDAYS[weekdayIndex]} ${parts.day} de ${MONTHS[parts.month - 1]}`}
-                actions={
-                    <Link to="/semana">
-                        <Button variant="secondary" size="md">Ir al calendario</Button>
-                    </Link>
-                }
             />
 
             {/* Con dos o más marcadas, arrastrar cualquiera de ellas mueve a
