@@ -10,7 +10,26 @@ import ColorTagDot from './ColorTagDot'
 import DescriptionModal from './DescriptionModal'
 import TaskActionsMenu from './TaskActionsMenu'
 import TaskStatusControl from './TaskStatusControl'
-import { PlanDay } from './PlanDayPicker'
+
+/** Seis puntos, como en cualquier fila que se puede arrastrar (Trello,
+ *  Linear, Notion): sin esto, "se puede arrastrar" solo lo decía el cursor
+ *  al pasar por encima, y con el menú de tres puntos ya sin la opción de
+ *  elegir día, arrastrar es la única forma de mover un pendiente entre
+ *  columnas. Aparece con la fila, no antes: agregarlo siempre visible
+ *  competiría con el punto de color, que ya ocupa ese primer lugar. */
+function DragHandle() {
+    return (
+        <svg
+            aria-hidden="true"
+            width="8" height="16" viewBox="0 0 8 16" fill="currentColor"
+            className="shrink-0"
+        >
+            <circle cx="2" cy="2" r="1.3" /><circle cx="6" cy="2" r="1.3" />
+            <circle cx="2" cy="8" r="1.3" /><circle cx="6" cy="8" r="1.3" />
+            <circle cx="2" cy="14" r="1.3" /><circle cx="6" cy="14" r="1.3" />
+        </svg>
+    )
+}
 
 /** Fila de la vista simplificada de "Mi trabajo": lo único que importa
  *  momento a momento. Cambiar el estado y jalar algo a hoy son gestos de un
@@ -29,17 +48,11 @@ const COLOR_WASH: Record<'orange' | 'green' | 'fuchsia' | 'celeste', string> = {
 
 type Props = {
     task: Task
-    /** Los cinco días de la semana en curso (lunes a viernes), para el
-     *  selector de planificación y para saber si el vencimiento es hoy. */
-    weekDays: PlanDay[]
     /** "YYYY-MM-DD" del día de hoy, en la zona de quien mira. */
     todayKey: string
     canEdit: boolean
     canHide: boolean
     busy: boolean
-    /** Si se puede mover a un día de la semana desde el menú de opciones.
-     *  En "Finalizados" no aplica —una tarea ya cerrada no se planifica—. */
-    showDayOptions?: boolean
     /** Marca que la tarea está en revisión: solo la traen las filas de la
      *  columna "Por validar" —la etiqueta ya lo dice, esto solo habilita el
      *  bloque de Aprobar / Solicitar ajustes. */
@@ -53,8 +66,6 @@ type Props = {
     /** Cambia el estado —incluido "Por validar", que no es un estado real
      *  sino su propio flujo de aprobación— por su nombre en cada transición. */
     onSetLabel: (taskId: string, label: TaskLabel) => void
-    /** `null` quita el pendiente de la semana. */
-    onSetDay: (taskId: string, dayKey: string | null) => void
     onPatch: (taskId: string, formData: Record<string, unknown>) => void
     onDelete: (taskId: string) => void
     /** Selección múltiple con el mouse, como en el Finder: Cmd/Ctrl+clic
@@ -77,9 +88,9 @@ type Props = {
 }
 
 export default function SimpleTaskRow({
-    task, weekDays, todayKey, canEdit, canHide, busy, showDayOptions = true,
+    task, todayKey, canEdit, canHide, busy,
     reviewInfo, canResolveReview, onApprove, onRequestChanges,
-    onSetLabel, onSetDay, onPatch, onDelete,
+    onSetLabel, onPatch, onDelete,
     selected, onSelectClick, selection, listKey, onReorder
 }: Props) {
     const [adjusting, setAdjusting] = useState(false)
@@ -200,7 +211,6 @@ export default function SimpleTaskRow({
     const overdue = !done && !!dueKey && dueKey < todayKey
     const dueToday = !done && dueKey === todayKey
 
-    const plannedKey = task.plannedDate ? task.plannedDate.slice(0, 10) : null
     const colorTag = task.colorTag ?? null
 
     return (
@@ -272,6 +282,14 @@ export default function SimpleTaskRow({
                 dropPos === 'after' ? 'shadow-[inset_0_-2px_0_0_theme(colors.brand.500)]' : ''
             }`}
         >
+            {canEdit && (
+                <span
+                    className="self-center text-ink-subtle/0 group-hover:text-ink-subtle/50 transition-colors"
+                >
+                    <DragHandle />
+                </span>
+            )}
+
             <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-1.5">
                     <ColorTagDot
@@ -292,8 +310,9 @@ export default function SimpleTaskRow({
                             rows={1}
                             aria-label={`Nombre de ${task.name}`}
                             title={task.name}
-                            className={`min-w-0 flex-1 border-0 p-0 bg-transparent text-sm font-medium
-                                leading-snug focus:ring-0 rounded resize-none overflow-hidden ${
+                            className={`min-w-0 flex-1 border-0 px-1 -mx-1 py-0.5 -my-0.5 bg-transparent
+                                text-sm font-medium leading-snug rounded resize-none overflow-hidden
+                                focus:ring-0 focus:bg-brand-50 ${
                                 done ? 'text-ink-subtle line-through' : 'text-ink'
                             }`}
                         />
@@ -545,13 +564,9 @@ export default function SimpleTaskRow({
                 ) : (
                     <TaskActionsMenu
                         taskName={task.name}
-                        weekDays={weekDays}
-                        plannedKey={plannedKey}
-                        showDayOptions={showDayOptions}
                         canEdit={canEdit}
                         canHide={canHide}
                         isPrivate={!!task.isPrivate}
-                        onSetDay={dayKey => onSetDay(task._id, dayKey)}
                         onToggleHide={() => onPatch(task._id, { isPrivate: !task.isPrivate })}
                         onRequestDelete={() => setConfirming(true)}
                     />

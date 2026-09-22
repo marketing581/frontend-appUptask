@@ -216,7 +216,6 @@ function FinishedTasks({ userId, now, timezone, rowProps, onDragOver, onDragLeav
                                                 <SimpleTaskRow
                                                     key={task._id}
                                                     task={task}
-                                                    showDayOptions={false}
                                                     {...rowProps(task, group.tasks)}
                                                 />
                                             ))}
@@ -229,7 +228,6 @@ function FinishedTasks({ userId, now, timezone, rowProps, onDragOver, onDragLeav
                                         <SimpleTaskRow
                                             key={task._id}
                                             task={task}
-                                            showDayOptions={false}
                                             {...rowProps(task, tasks)}
                                         />
                                     ))}
@@ -594,7 +592,6 @@ export default function MyWorkView() {
             (!!approver && approver._id === currentUser?._id)
 
         return {
-            weekDays,
             todayKey,
             busy: changingStatus || requestingReview || resolvingReview,
             canEdit: canEditTask(task, currentUser),
@@ -607,8 +604,6 @@ export default function MyWorkView() {
             onRequestChanges: (taskId: string, note: string) =>
                 resolveReview({ taskId, approved: false, note: note.trim() || undefined }),
             onSetLabel: (_taskId: string, label: TaskLabel) => setLabel(task, label),
-            onSetDay: (taskId: string, dayKey: string | null) =>
-                patchTask({ taskId, formData: { plannedDate: dayKey } }),
             onPatch: (taskId: string, formData: Record<string, unknown>) =>
                 patchTask({ taskId, formData: formData as never }),
             onDelete: (taskId: string) => removeTask(taskId),
@@ -741,7 +736,7 @@ export default function MyWorkView() {
             ) : (
                 <ul className="divide-y divide-line max-h-[85vh] overflow-y-auto scrollbar-none">
                     {reviewTasks.map(task => (
-                        <SimpleTaskRow key={task._id} task={task} showDayOptions={false} {...rowProps(task, reviewTasks, 'review')} />
+                        <SimpleTaskRow key={task._id} task={task} {...rowProps(task, reviewTasks, 'review')} />
                     ))}
                 </ul>
             )}
