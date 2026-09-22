@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { PlusIcon } from '@heroicons/react/24/outline'
 import { Task } from '@/types'
 import { ALERT_COLOR, TaskLabel, frequencyShort, getTaskLabel } from '@/utils/taskLabels'
 import { kindOf } from '@/utils/taskKind'
@@ -363,9 +364,9 @@ export default function SimpleTaskRow({
                                     type="button"
                                     onMouseDown={event => event.stopPropagation()}
                                     onClick={() => setDescFocused(true)}
-                                    className="text-2xs text-ink-subtle/60 hover:text-ink-subtle"
+                                    className="flex items-center gap-0.5 text-2xs text-ink-subtle/60 hover:text-ink-subtle"
                                 >
-                                    Añadir descripción
+                                    <PlusIcon className="w-3 h-3" /> Añadir descripción
                                 </button>
                             ) : null}
                         </div>
