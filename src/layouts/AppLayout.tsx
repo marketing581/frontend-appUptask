@@ -107,9 +107,7 @@ function SidebarContent({
     const badges = useNavBadges()
     const sections = NAV_SECTIONS.map(section => ({
         ...section,
-        items: section.items.filter(item =>
-            (!item.ownerOnly || isSuperAdmin) && (!item.managerOnly || role === 'manager')
-        )
+        items: section.items.filter(item => !item.ownerOnly || isSuperAdmin)
     }))
 
     const { data: workspaces } = useQuery({

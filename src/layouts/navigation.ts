@@ -1,5 +1,4 @@
 import {
-    ArrowUpTrayIcon,
     ChartBarIcon,
     CheckCircleIcon,
     DocumentTextIcon,
@@ -30,8 +29,6 @@ export interface NavItem {
     badge: NavBadge
     /** Solo visible para la cuenta administradora (`User.isSuperAdmin`). */
     ownerOnly?: boolean
-    /** Solo visible para la encargada de su propio equipo (`role === 'manager'`). */
-    managerOnly?: boolean
 }
 
 export interface NavSection {
@@ -104,15 +101,6 @@ export const NAV_SECTIONS: NavSection[] = [
                 end: false,
                 badge: null,
                 ownerOnly: true
-            },
-            {
-                to: '/importar-notion',
-                label: 'Importar de Notion',
-                hint: 'Sube un CSV exportado',
-                icon: ArrowUpTrayIcon,
-                end: false,
-                badge: null,
-                managerOnly: true
             }
         ]
     }

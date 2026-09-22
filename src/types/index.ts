@@ -378,17 +378,3 @@ export const finishedReportSchema = z.object({
     rows: z.array(finishedRowSchema)
 })
 export type FinishedRow = z.infer<typeof finishedRowSchema>
-
-/** Autoservicio del import de Notion: pegar el CSV, elegir responsable, y
- *  con `dryRun` solo revisar antes de confirmar. */
-export const notionImportResultSchema = z.object({
-    total: z.number(),
-    created: z.number(),
-    updated: z.number(),
-    preview: z.array(z.object({
-        name: z.string(),
-        status: z.enum(['pending', 'inProgress', 'done']),
-        onHold: z.boolean()
-    }))
-})
-export type NotionImportResult = z.infer<typeof notionImportResultSchema>
