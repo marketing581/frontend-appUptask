@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowsPointingOutIcon } from '@heroicons/react/24/outline'
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
 import { Task } from '@/types'
 import { ALERT_COLOR, TaskLabel, frequencyShort, getTaskLabel } from '@/utils/taskLabels'
 import { kindOf } from '@/utils/taskKind'
@@ -403,7 +403,10 @@ export default function SimpleTaskRow({
                     {/* Siempre a la vista, tenga o no ya texto: sin esto, la
                         única forma de llegar al editor completo era escribir
                         tanto que desbordara el campo corto —invisible si la
-                        tarjeta estaba vacía o con poco texto—. */}
+                        tarjeta estaba vacía o con poco texto—. Un solo trazo
+                        hacia afuera de un recuadro dice "ábrelo aparte"; las
+                        cuatro flechas del ícono anterior se leían como
+                        "arrastra esto", que ya lo dice el asa de la fila. */}
                     {(canEdit || description) && (
                         <button
                             type="button"
@@ -414,7 +417,7 @@ export default function SimpleTaskRow({
                             className="w-5 h-5 shrink-0 grid place-content-center rounded text-ink-subtle/70
                                 hover:bg-slate-200 hover:text-ink transition-colors"
                         >
-                            <ArrowsPointingOutIcon className="w-3.5 h-3.5" />
+                            <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
                         </button>
                     )}
                 </div>
