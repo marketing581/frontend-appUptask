@@ -27,6 +27,13 @@ export const schedulePrefsSchema = z.object({
     showWeekends: z.boolean()
 })
 
+export const workspaceSchema = z.object({
+    _id: z.string(),
+    name: z.string()
+})
+export type Workspace = z.infer<typeof workspaceSchema>
+export const workspacesSchema = z.array(workspaceSchema)
+
 export const userSchema = authSchema.pick({
     name: true,
     email: true
@@ -34,7 +41,9 @@ export const userSchema = authSchema.pick({
     _id: z.string(),
     role: z.enum(['manager', 'member']).optional(),
     timezone: z.string().optional(),
-    schedulePrefs: schedulePrefsSchema.optional()
+    schedulePrefs: schedulePrefsSchema.optional(),
+    workspace: workspaceSchema.optional(),
+    isSuperAdmin: z.boolean().optional()
 })
 export type User = z.infer<typeof userSchema>
 export type UserProfileForm = Pick<User, 'name' | 'email'>

@@ -4,7 +4,6 @@ import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/hooks/useAuth'
 import { getScheduleMembers } from '@/api/ScheduleAPI'
 import { getTaskDurationReport, ReportPeriod } from '@/api/ReportAPI'
-import { REPORTS_OWNER_ID } from '@/utils/reportsAccess'
 import {
     DEFAULT_TIMEZONE, addDays, addMonths, formatDayHeader, formatDuration, formatRangeLabel, formatTime,
     getZonedParts, startOfMonth
@@ -14,8 +13,8 @@ import PersonSwitcher from '@/components/team/PersonSwitcher'
 import { TaskDurationRow } from '@/types'
 
 /** Informe gerencial: cuánto tarda el equipo de "En proceso" a "Listo",
- *  contando solo horario de oficina. Es de una sola cuenta —lo bloquea el
- *  servidor por id exacto—; este `if` de más arriba es solo para no lanzar
+ *  contando solo horario de oficina. Es de una sola cuenta administradora
+ *  —lo bloquea el servidor—; este `if` de más arriba es solo para no lanzar
  *  la consulta ni mostrar el filtro a quien de todos modos recibirá un 403. */
 
 const PERIODS: { key: ReportPeriod, label: string }[] = [
@@ -80,7 +79,7 @@ export default function InformesView() {
     const [anchor, setAnchor] = useState(() => new Date())
     const [personId, setPersonId] = useState('all')
 
-    const hasAccess = currentUser?._id === REPORTS_OWNER_ID
+    const hasAccess = !!currentUser?.isSuperAdmin
     const timezone = currentUser?.timezone ?? DEFAULT_TIMEZONE
 
     const { data: members } = useQuery({

@@ -9,6 +9,14 @@ api.interceptors.request.use( config => {
     if(token) {
         config.headers.Authorization = `Bearer ${token}`
     }
+
+    // Solo tiene efecto si la cuenta es super-admin: el servidor ignora esta
+    // cabecera para cualquier otra, así que enviarla de más es inocuo.
+    const activeWorkspace = localStorage.getItem('ACTIVE_WORKSPACE_ID')
+    if (activeWorkspace) {
+        config.headers['X-Workspace-Id'] = activeWorkspace
+    }
+
     return config
 })
 

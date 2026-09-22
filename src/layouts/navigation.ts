@@ -27,7 +27,7 @@ export interface NavItem {
     icon: typeof Squares2X2Icon
     end: boolean
     badge: NavBadge
-    /** Solo visible para la cuenta dueña del ítem (ver `REPORTS_OWNER_ID`). */
+    /** Solo visible para la cuenta administradora (`User.isSuperAdmin`). */
     ownerOnly?: boolean
 }
 

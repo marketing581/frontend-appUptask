@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, Navigate, NavLink, Link, useLocation } from 'react-router-dom'
-import { ToastContainer } from 'react-toastify'
-import { useQueryClient } from '@tanstack/react-query'
+import { ToastContainer, toast } from 'react-toastify'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import 'react-toastify/dist/ReactToastify.css'
 import {
     ArrowRightOnRectangleIcon,
@@ -15,7 +15,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { useNavBadges } from '@/hooks/useNavBadges'
 import { NAV_SECTIONS, NavItem } from './navigation'
 import { Avatar } from '@/components/ui'
-import { REPORTS_OWNER_ID } from '@/utils/reportsAccess'
+import { getWorkspaces, createWorkspace } from '@/api/WorkspaceAPI'
+import WorkspaceSwitcher from '@/components/workspace/WorkspaceSwitcher'
 
 function NavRow({ item, count, collapsed, onNavigate }: {
     item: NavItem
@@ -87,11 +88,15 @@ function NavRow({ item, count, collapsed, onNavigate }: {
     )
 }
 
-function SidebarContent({ onNavigate, name, role, userId, collapsed, onToggleCollapse }: {
+function SidebarContent({
+    onNavigate, name, role, isSuperAdmin, workspaceName, workspaceId, collapsed, onToggleCollapse
+}: {
     onNavigate?: () => void
     name: string
     role?: string
-    userId: string
+    isSuperAdmin?: boolean
+    workspaceName: string
+    workspaceId?: string
     collapsed?: boolean
     /** Solo la tiene el sidebar fijo de desktop: el cajón de mobile no
      *  colapsa, ya se cierra solo. */
@@ -101,11 +106,36 @@ function SidebarContent({ onNavigate, name, role, userId, collapsed, onToggleCol
     const badges = useNavBadges()
     const sections = NAV_SECTIONS.map(section => ({
         ...section,
-        items: section.items.filter(item => !item.ownerOnly || userId === REPORTS_OWNER_ID)
+        items: section.items.filter(item => !item.ownerOnly || isSuperAdmin)
     }))
+
+    const { data: workspaces } = useQuery({
+        queryKey: ['workspaces'],
+        queryFn: getWorkspaces,
+        enabled: isSuperAdmin,
+        retry: false
+    })
+
+    // Cambiar de equipo re-obtiene absolutamente todo lo que depende de él
+    // —que es casi toda la app—, así que una recarga completa es más simple
+    // y más segura que invalidar consulta por consulta.
+    const switchWorkspace = (id: string) => {
+        localStorage.setItem('ACTIVE_WORKSPACE_ID', id)
+        window.location.reload()
+    }
+
+    const addWorkspace = async (name: string) => {
+        try {
+            const created = await createWorkspace(name)
+            if (created) switchWorkspace(created._id)
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'No se pudo crear el equipo')
+        }
+    }
 
     const logout = () => {
         localStorage.removeItem('AUTH_TOKEN')
+        localStorage.removeItem('ACTIVE_WORKSPACE_ID')
         queryClient.invalidateQueries({ queryKey: ['user'] })
     }
 
@@ -123,7 +153,7 @@ function SidebarContent({ onNavigate, name, role, userId, collapsed, onToggleCol
                         <span className="min-w-0">
                             <span className="block text-sm font-bold text-ink leading-tight truncate">UpTask</span>
                             <span className="block text-2xs text-ink-subtle leading-tight truncate">
-                                Equipo de Marketing
+                                {workspaceName}
                             </span>
                         </span>
                     )}
@@ -142,6 +172,17 @@ function SidebarContent({ onNavigate, name, role, userId, collapsed, onToggleCol
                     </button>
                 )}
             </div>
+
+            {!collapsed && isSuperAdmin && workspaces && workspaces.length > 0 && (
+                <div className="px-2 pt-2">
+                    <WorkspaceSwitcher
+                        workspaces={workspaces}
+                        value={workspaceId ?? ''}
+                        onChange={switchWorkspace}
+                        onCreate={addWorkspace}
+                    />
+                </div>
+            )}
 
             {onToggleCollapse && collapsed && (
                 <button
@@ -276,7 +317,9 @@ export default function AppLayout() {
                 <SidebarContent
                     name={data.name}
                     role={data.role}
-                    userId={data._id}
+                    isSuperAdmin={data.isSuperAdmin}
+                    workspaceName={data.workspace?.name ?? 'UpTask'}
+                    workspaceId={data.workspace?._id}
                     collapsed={collapsed}
                     onToggleCollapse={toggleCollapsed}
                 />
@@ -319,7 +362,9 @@ export default function AppLayout() {
                         <SidebarContent
                             name={data.name}
                             role={data.role}
-                            userId={data._id}
+                            isSuperAdmin={data.isSuperAdmin}
+                            workspaceName={data.workspace?.name ?? 'UpTask'}
+                            workspaceId={data.workspace?._id}
                             onNavigate={() => setDrawerOpen(false)}
                         />
                     </div>
